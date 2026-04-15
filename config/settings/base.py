@@ -26,9 +26,7 @@ MIDDLEWARE = [
 
 ROOT_URLCONF = "config.urls"
 
-DATABASES = {
-    "default": env.db("DATABASE_URL")
-}
+DATABASES = {"default": env.db("DATABASE_URL")}
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
