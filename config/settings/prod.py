@@ -1,4 +1,7 @@
-from .base import *
+from . import base
+
+# Import all uppercase Django settings from base without wildcard imports.
+globals().update({name: value for name, value in vars(base).items() if name.isupper()})
 
 DEBUG = False
-ALLOWED_HOSTS = env.list("ALLOWED_HOSTS")
+ALLOWED_HOSTS = base.env.list("ALLOWED_HOSTS")
