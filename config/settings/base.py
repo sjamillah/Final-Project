@@ -14,6 +14,7 @@ INSTALLED_APPS = [
     "django.contrib.contenttypes",
     "django.contrib.auth",
     "rest_framework",
+    "drf_spectacular",
     "apps.core",
     "apps.shortener",
     "apps.api",
@@ -27,6 +28,10 @@ MIDDLEWARE = [
 ROOT_URLCONF = "config.urls"
 
 DATABASES = {"default": env.db("DATABASE_URL")}
+
+REST_FRAMEWORK = {
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+}
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
