@@ -1,4 +1,4 @@
-import environ
+import environ  # type: ignore[reportMissingImports]
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -34,6 +34,8 @@ REST_FRAMEWORK = {
 }
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+AUTH_USER_MODEL = "shortener.User"
 
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = "UTC"
