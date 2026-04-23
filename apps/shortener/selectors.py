@@ -2,8 +2,7 @@ from django.db.models import Prefetch  # pyright: ignore[reportMissingModuleSour
 
 from .models import Click, URL
 
-
-# -- Basic optimized fetches --------------------------------------------------
+# Basic fetches
 
 
 def get_urls_with_owner():
@@ -27,7 +26,7 @@ def get_urls_full():
     )
 
 
-# -- Scoped fetches -----------------------------------------------------------
+# Scoped fetches
 
 
 def get_active_urls_with_owner():
