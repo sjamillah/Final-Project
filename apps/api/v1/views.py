@@ -3,6 +3,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.shortcuts import redirect
+from drf_spectacular.utils import OpenApiParameter, extend_schema
 
 from apps.shortener.services import create_short_url, get_url_by_code
 from .serializers import URLCreateSerializer, URLResponseSerializer
@@ -10,6 +11,10 @@ from .serializers import URLCreateSerializer, URLResponseSerializer
 
 class URLCreateView(APIView):
 
+    @extend_schema(
+        request=URLCreateSerializer,
+        responses={201: URLResponseSerializer},
+    )
     def post(self, request: Request) -> Response:
         serializer = URLCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -22,6 +27,18 @@ class URLCreateView(APIView):
 
 class URLRedirectView(APIView):
 
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                name="short_code",
+                type=str,
+                location=OpenApiParameter.PATH,
+                required=True,
+                description="Short code generated for a URL.",
+            )
+        ],
+        responses={302: None, 404: None},
+    )
     def get(self, request: Request, short_code: str) -> Response:
         url = get_url_by_code(short_code)
 
