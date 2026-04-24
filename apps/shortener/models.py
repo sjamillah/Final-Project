@@ -7,9 +7,10 @@ from .managers import URLManager
 class User(AbstractUser):
     class Tier(models.TextChoices):
         FREE = "free", "Free"
-        PRO = "pro", "Pro"
-        TEAM = "team", "Team"
+        PREMIUM = "premium", "Premium"
+        ADMIN = "admin", "Admin"
 
+    email = models.EmailField(unique=True)
     is_premium = models.BooleanField(default=False)
     tier = models.CharField(
         max_length=10,
@@ -44,6 +45,30 @@ class URL(models.Model):
     )
     original_url = models.URLField(max_length=2048)
     short_code = models.CharField(max_length=10, unique=True, db_index=True)
+    custom_alias = models.CharField(
+        max_length=50,
+        null=True,
+        blank=True,
+        unique=True,
+    )
+    title = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        unique=True,
+    )
+    description = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        unique=True,
+    )
+    favicon = models.CharField(
+        max_length=2048,
+        null=True,
+        blank=True,
+        unique=True,
+    )
     click_count = models.PositiveIntegerField(default=0)
     is_active = models.BooleanField(default=True)
     expires_at = models.DateTimeField(null=True, blank=True)

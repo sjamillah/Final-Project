@@ -10,6 +10,10 @@ class TestURLManagerActive:
         result = URL.objects.active()
         assert url in result
 
+    def test_active_urls_alias_matches(self, url):
+        result = URL.objects.active_urls()
+        assert url in result
+
     def test_active_excludes_inactive(self, url_inactive):
         result = URL.objects.active()
         assert url_inactive not in result
@@ -47,6 +51,10 @@ class TestURLManagerExpired:
         result = URL.objects.expired()
         assert url_inactive in result
 
+    def test_expired_urls_alias_matches(self, url_inactive):
+        result = URL.objects.expired_urls()
+        assert url_inactive in result
+
     def test_expired_returns_past_expiry(self, url_expired):
         result = URL.objects.expired()
         assert url_expired in result
@@ -75,6 +83,16 @@ class TestURLManagerPopular:
             click_count=500,
         )
         result = URL.objects.popular(threshold=100)
+        assert popular in result
+
+    def test_popular_urls_alias_matches(self, db, user):
+        popular = URL.objects.create(
+            original_url="https://popular-alias.com",
+            short_code="pop777",
+            owner=user,
+            click_count=150,
+        )
+        result = URL.objects.popular_urls(threshold=100)
         assert popular in result
 
     def test_popular_excludes_low_click_urls(self, url):

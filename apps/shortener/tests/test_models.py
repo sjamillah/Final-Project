@@ -15,12 +15,28 @@ class TestUserModel:
 
     def test_premium_user(self, premium_user):
         assert premium_user.is_premium is True
-        assert premium_user.tier == User.Tier.PRO
+        assert premium_user.tier == User.Tier.PREMIUM
 
     def test_tier_choices(self):
         assert User.Tier.FREE == "free"
-        assert User.Tier.PRO == "pro"
-        assert User.Tier.TEAM == "team"
+        assert User.Tier.PREMIUM == "premium"
+        assert User.Tier.ADMIN == "admin"
+
+    def test_email_is_unique(self, db):
+        from django.db import IntegrityError
+
+        User.objects.create_user(
+            username="user-one",
+            email="unique@example.com",
+            password="pass12345",
+        )
+
+        with pytest.raises(IntegrityError):
+            User.objects.create_user(
+                username="user-two",
+                email="unique@example.com",
+                password="pass12345",
+            )
 
     def test_str(self, user):
         assert str(user) == "testuser"
@@ -63,6 +79,32 @@ class TestURLModel:
         assert url.is_active is True
         assert url.click_count == 0
         assert url.expires_at is None
+
+    def test_optional_metadata_fields_default_to_none(self, db, user):
+        url = URL.objects.create(
+            original_url="https://metadata.example.com",
+            short_code="meta01",
+            owner=user,
+        )
+        assert url.custom_alias is None
+        assert url.title is None
+        assert url.description is None
+        assert url.favicon is None
+
+    def test_optional_metadata_fields_can_be_saved(self, db, user):
+        url = URL.objects.create(
+            original_url="https://metadata.example.com/with-fields",
+            short_code="meta02",
+            owner=user,
+            custom_alias="docs",
+            title="Marketing Landing Page",
+            description="Primary campaign landing page",
+            favicon="https://example.com/favicon.ico",
+        )
+        assert url.custom_alias == "docs"
+        assert url.title == "Marketing Landing Page"
+        assert url.description == "Primary campaign landing page"
+        assert url.favicon == "https://example.com/favicon.ico"
 
     def test_str(self, url):
         assert str(url) == "abc123 -> https://example.com"

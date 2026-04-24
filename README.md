@@ -85,7 +85,7 @@ poetry run python manage.py runserver
 
 ## API endpoints
 
-- POST /api/v1/urls/
+- POST /api/urls/
   - Create a short URL
   - Body:
 

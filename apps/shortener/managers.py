@@ -25,11 +25,20 @@ class URLManager(models.Manager):
     def get_queryset(self):
         return URLQuerySet(self.model, using=self._db)
 
-    def active(self):
+    def active_urls(self):
         return self.get_queryset().active()
 
-    def expired(self):
+    def expired_urls(self):
         return self.get_queryset().expired()
 
-    def popular(self, threshold=100):
+    def popular_urls(self, threshold=100):
         return self.get_queryset().popular(threshold)
+
+    def active(self):
+        return self.active_urls()
+
+    def expired(self):
+        return self.expired_urls()
+
+    def popular(self, threshold=100):
+        return self.popular_urls(threshold)
