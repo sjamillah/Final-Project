@@ -1,5 +1,8 @@
 import pytest
+from unittest.mock import patch
 from rest_framework.test import APIClient
+
+from apps.shortener.models import Click
 
 
 @pytest.fixture
@@ -68,9 +71,43 @@ class TestURLRedirectView:
         response = client.get("/xxxxxx/")
         assert response.status_code == 404
 
+    def test_inactive_code_returns_404(self, client, url_inactive):
+        response = client.get(f"/{url_inactive.short_code}/")
+        assert response.status_code == 404
+
+    def test_expired_code_returns_410(self, client, url_expired):
+        response = client.get(f"/{url_expired.short_code}/")
+        assert response.status_code == 410
+
     def test_redirect_correct_location(self, client, db):
         from apps.shortener.services import create_short_url
 
         created = create_short_url("https://redirect-target.com")
         response = client.get(f"/{created.short_code}/")
         assert response["Location"] == "https://redirect-target.com"
+
+    def test_redirect_creates_click_record(self, client, url):
+        assert Click.objects.filter(url=url).count() == 0
+        response = client.get(
+            f"/{url.short_code}/",
+            HTTP_USER_AGENT="pytest-agent",
+            HTTP_REFERER="https://source.example.com",
+            REMOTE_ADDR="10.10.10.10",
+        )
+        assert response.status_code == 302
+        click = Click.objects.get(url=url)
+        assert click.user_agent == "pytest-agent"
+        assert click.referrer == "https://source.example.com"
+        assert click.ip_address == "10.10.10.10"
+
+    def test_redirect_increments_click_count(self, client, url):
+        assert url.click_count == 0
+        client.get(f"/{url.short_code}/")
+        url.refresh_from_db()
+        assert url.click_count == 1
+
+    def test_redirect_still_works_when_click_tracking_fails(self, client, url):
+        with patch("apps.api.v1.views.create_click_for_url", side_effect=Exception):
+            response = client.get(f"/{url.short_code}/")
+        assert response.status_code == 302
+        assert response["Location"] == url.original_url

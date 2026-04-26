@@ -1,4 +1,7 @@
+from typing import Literal
+
 from django.db.models import Prefetch  # pyright: ignore[reportMissingModuleSource]
+from django.utils import timezone  # pyright: ignore[reportMissingModuleSource]
 
 from .models import Click, URL
 
@@ -44,8 +47,30 @@ def get_url_by_code_with_owner(short_code: str) -> URL | None:
     return URL.objects.select_related("owner").filter(short_code=short_code).first()
 
 
+def get_url_by_code(short_code: str) -> URL | None:
+    """Single URL lookup by short_code."""
+    return URL.objects.filter(short_code=short_code).first()
+
+
 def get_urls_for_user(user):
     """All URLs belonging to a user. Tags prefetched for safe iteration."""
     return (
         URL.objects.filter(owner=user).prefetch_related("tags").order_by("-created_at")
     )
+
+
+RedirectResolutionStatus = Literal["active", "not_found", "inactive", "expired"]
+
+
+def resolve_redirect_url(
+    short_code: str,
+) -> tuple[RedirectResolutionStatus, URL | None]:
+    """Resolves a short code into redirect eligibility state and URL object."""
+    url = get_url_by_code(short_code)
+    if url is None:
+        return "not_found", None
+    if not url.is_active:
+        return "inactive", url
+    if url.expires_at is not None and url.expires_at <= timezone.now():
+        return "expired", url
+    return "active", url

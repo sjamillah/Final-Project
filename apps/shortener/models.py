@@ -79,6 +79,17 @@ class URL(models.Model):
 
     class Meta:
         db_table = "urls"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["owner", "original_url"],
+                name="uniq_owner_original_url",
+            ),
+            models.UniqueConstraint(
+                fields=["original_url"],
+                condition=models.Q(owner__isnull=True),
+                name="uniq_anon_original_url",
+            ),
+        ]
         indexes = [
             models.Index(fields=["short_code"]),
             models.Index(fields=["owner"]),

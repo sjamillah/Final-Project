@@ -5,12 +5,14 @@ from django.test.utils import CaptureQueriesContext
 from apps.shortener.models import URL
 from apps.shortener.selectors import (
     get_active_urls_with_owner,
+    get_url_by_code,
     get_popular_urls_with_tags,
     get_url_by_code_with_owner,
     get_urls_for_user,
     get_urls_full,
     get_urls_with_owner,
     get_urls_with_tags,
+    resolve_redirect_url,
 )
 
 
@@ -137,6 +139,19 @@ class TestGetUrlByCodeWithOwner:
 
 
 @pytest.mark.django_db
+class TestGetUrlByCode:
+
+    def test_returns_url_for_valid_code(self, url):
+        result = get_url_by_code(url.short_code)
+        assert result is not None
+        assert result.pk == url.pk
+
+    def test_returns_none_for_invalid_code(self):
+        result = get_url_by_code("xxxxxx")
+        assert result is None
+
+
+@pytest.mark.django_db
 class TestGetUrlsForUser:
 
     def test_returns_urls_for_user(self, url, user):
@@ -168,3 +183,28 @@ class TestGetUrlsForUser:
             for u in urls:
                 _ = list(u.tags.all())
         assert len(ctx.captured_queries) == 0
+
+
+@pytest.mark.django_db
+class TestResolveRedirectUrl:
+
+    def test_returns_active_state(self, url):
+        state, resolved = resolve_redirect_url(url.short_code)
+        assert state == "active"
+        assert resolved is not None
+        assert resolved.pk == url.pk
+
+    def test_returns_not_found_state(self):
+        state, resolved = resolve_redirect_url("missing1")
+        assert state == "not_found"
+        assert resolved is None
+
+    def test_returns_inactive_state(self, url_inactive):
+        state, resolved = resolve_redirect_url(url_inactive.short_code)
+        assert state == "inactive"
+        assert resolved is not None
+
+    def test_returns_expired_state(self, url_expired):
+        state, resolved = resolve_redirect_url(url_expired.short_code)
+        assert state == "expired"
+        assert resolved is not None
