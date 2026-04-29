@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "fingerprint": "version=5.2.13|django/db/models/base.py:100964:1776852611923|django/db/models/fields/__init__.py:98730:1776852611932|django/db/models/lookups.py:29048:1776852611928|django/db/models/fields/related_descriptors.py:66722:1776852611941|django/db/models/fields/related.py:79371:1776852611939|django/db/models/query.py:107026:1776852611930|django/db/models/sql/query.py:120134:1776852611952",
+  "fingerprint": "version=5.2.13|django/db/models/base.py:100964:1776934237950|django/db/models/fields/__init__.py:98730:1776934238090|django/db/models/lookups.py:29048:1776934238010|django/db/models/fields/related_descriptors.py:66722:1776934238170|django/db/models/fields/related.py:79371:1776934238165|django/db/models/query.py:107026:1776934238041|django/db/models/sql/query.py:120134:1776934238360",
   "tables": {
     "django_version": "5.2.13",
-    "site_packages_path": "c:\\Users\\LENOVO\\Desktop\\Final-Project\\.venv\\Lib\\site-packages",
-    "generated_at_unix_ms": 1776927434052,
+    "site_packages_path": "c:\\Users\\LENOVO\\Desktop\\Final-Project\\.venv\\lib\\python3.10\\site-packages",
+    "generated_at_unix_ms": 1777451045649,
     "core_lookups": [
       "exact",
       "iexact",

@@ -1,6 +1,15 @@
+import tests.test_django_setup as test_django_setup
 import pytest
 
+from rest_framework.test import APIClient
 from apps.shortener.models import URL
+
+DJANGO_SETUP = test_django_setup
+
+
+@pytest.fixture
+def client():
+    return APIClient()
 
 
 @pytest.fixture
