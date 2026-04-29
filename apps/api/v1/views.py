@@ -1,16 +1,16 @@
 import logging
 
 from django.http import HttpResponse
+from django.shortcuts import redirect
 from rest_framework import status
 from rest_framework.permissions import AllowAny
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.throttling import AnonRateThrottle
 from rest_framework.views import APIView
-from django.shortcuts import redirect
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 
-from apps.shortener.selectors import resolve_redirect_url
+from apps.shortener.selectors import RedirectStatus, resolve_redirect_url
 from apps.shortener.services import (
     build_click_metadata,
     create_click_for_url,
@@ -58,14 +58,16 @@ class URLRedirectView(APIView):
         responses={302: None, 404: None, 410: None},
     )
     def get(self, request: Request, short_code: str) -> HttpResponse:
-        state, url = resolve_redirect_url(short_code)
+        resolution = resolve_redirect_url(short_code)
+        state = resolution.status
+        url = resolution.url
 
-        if state in {"not_found", "inactive"}:
+        if state in {RedirectStatus.NOT_FOUND, RedirectStatus.INACTIVE}:
             logger.info("redirect_not_found", extra={"short_code": short_code})
             return Response(
                 {"detail": "Short code not found."}, status=status.HTTP_404_NOT_FOUND
             )
-        if state == "expired":
+        if state == RedirectStatus.EXPIRED:
             logger.info("redirect_expired", extra={"short_code": short_code})
             return Response(
                 {"detail": "Short code has expired."},
@@ -73,7 +75,7 @@ class URLRedirectView(APIView):
             )
 
         try:
-            create_click_for_url(url=url, **build_click_metadata(request.META))
+            create_click_for_url(url=url, metadata=build_click_metadata(request.META))
         except Exception:
             logger.exception(
                 "redirect_click_tracking_failed",

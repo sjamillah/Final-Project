@@ -117,7 +117,7 @@ class TestBuildClickMetadata:
                 "REMOTE_ADDR": "9.9.9.9",
             }
         )
-        assert data["ip_address"] == "9.9.9.9"
+        assert data.ip_address == "9.9.9.9"
 
     @override_settings(TRUST_PROXY_HEADERS=True)
     def test_uses_forwarded_for_when_proxy_headers_trusted(self):
@@ -127,4 +127,4 @@ class TestBuildClickMetadata:
                 "REMOTE_ADDR": "9.9.9.9",
             }
         )
-        assert data["ip_address"] == "1.1.1.1"
+        assert data.ip_address == "1.1.1.1"

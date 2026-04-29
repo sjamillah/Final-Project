@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 import secrets
 import string
 from collections.abc import Mapping
@@ -7,6 +8,37 @@ from django.db import IntegrityError, transaction
 from django.db.models import F
 
 from .models import Click, URL, User
+from .exceptions import UniqueCodeError
+
+
+@dataclass(frozen=True, slots=True)
+class ClickMetadata:
+    ip_address: str | None
+    user_agent: str | None
+    referrer: str | None
+
+    @staticmethod
+    def _first_forwarded_ip(forwarded_for: str) -> str | None:
+        first_ip = forwarded_for.split(",")[0].strip()
+        return first_ip or None
+
+    @classmethod
+    def from_request_meta(cls, meta: Mapping[str, str]) -> "ClickMetadata":
+        forwarded_for = meta.get("HTTP_X_FORWARDED_FOR", "")
+        trust_proxy_headers = getattr(settings, "TRUST_PROXY_HEADERS", False)
+
+        ip_address = None
+        if trust_proxy_headers and forwarded_for:
+            ip_address = cls._first_forwarded_ip(forwarded_for)
+        if not ip_address:
+            ip_address = meta.get("REMOTE_ADDR")
+
+        return cls(
+            ip_address=ip_address,
+            user_agent=meta.get("HTTP_USER_AGENT"),
+            referrer=meta.get("HTTP_REFERER"),
+        )
+
 
 ALPHABET = string.ascii_letters + string.digits
 CODE_LENGTH = 6
@@ -28,7 +60,7 @@ def _unique_code() -> str:
         code = _generate_code()
         if not URL.objects.filter(short_code=code).exists():
             return code
-    raise RuntimeError("Failed to generate a unique short code. Try again.")
+    raise UniqueCodeError("Failed to generate a unique short code. Try again.")
 
 
 def _get_existing_url_for_owner(original_url: str, owner: User | None) -> URL | None:
@@ -88,35 +120,28 @@ def create_short_url(original_url: str, owner: User | None = None) -> URL:
 
             raise
 
-    raise RuntimeError("Failed to generate a unique short code. Try again.")
+    raise UniqueCodeError("Failed to generate a unique short code. Try again.")
 
 
-def build_click_metadata(meta: Mapping[str, str]) -> dict[str, str | None]:
-    forwarded_for = meta.get("HTTP_X_FORWARDED_FOR", "")
-    trust_proxy_headers = getattr(settings, "TRUST_PROXY_HEADERS", False)
-
-    ip_address = None
-    if trust_proxy_headers and forwarded_for:
-        ip_address = forwarded_for.split(",")[0].strip() or None
-    if not ip_address:
-        ip_address = meta.get("REMOTE_ADDR")
-
-    return {
-        "ip_address": ip_address,
-        "user_agent": meta.get("HTTP_USER_AGENT"),
-        "referrer": meta.get("HTTP_REFERER"),
-    }
+def build_click_metadata(meta: Mapping[str, str]) -> ClickMetadata:
+    return ClickMetadata.from_request_meta(meta)
 
 
 def create_click_for_url(
     url: URL,
     *,
+    metadata: ClickMetadata | None = None,
     ip_address: str | None = None,
     user_agent: str | None = None,
     country: str | None = None,
     city: str | None = None,
     referrer: str | None = None,
 ) -> Click:
+    if metadata is not None:
+        ip_address = metadata.ip_address
+        user_agent = metadata.user_agent
+        referrer = metadata.referrer
+
     with transaction.atomic():
         click = Click.objects.create(
             url=url,

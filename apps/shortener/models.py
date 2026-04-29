@@ -1,5 +1,6 @@
 from django.contrib.auth.models import AbstractUser  # type: ignore[reportMissingImports]
 from django.db import models  # type: ignore[reportMissingImports]
+from django.utils import timezone  # type: ignore[reportMissingImports]
 
 from .managers import URLManager
 
@@ -101,6 +102,10 @@ class URL(models.Model):
 
     def __str__(self):
         return f"{self.short_code} -> {self.original_url}"
+
+    @property
+    def is_expired(self) -> bool:
+        return self.expires_at is not None and self.expires_at <= timezone.now()
 
 
 class Click(models.Model):

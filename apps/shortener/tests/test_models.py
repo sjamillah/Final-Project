@@ -137,6 +137,12 @@ class TestURLModel:
         assert url.created_at is not None
         assert url.created_at <= timezone.now()
 
+    def test_is_expired_property(self, url_expired):
+        assert url_expired.is_expired is True
+
+    def test_is_expired_property_false_for_active_url(self, url):
+        assert url.is_expired is False
+
 
 @pytest.mark.django_db
 class TestClickModel:

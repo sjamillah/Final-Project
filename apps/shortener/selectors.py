@@ -1,9 +1,23 @@
-from typing import Literal
+from dataclasses import dataclass
+from enum import Enum
 
 from django.db.models import Prefetch  # pyright: ignore[reportMissingModuleSource]
-from django.utils import timezone  # pyright: ignore[reportMissingModuleSource]
 
 from .models import Click, URL
+
+
+class RedirectStatus(str, Enum):
+    ACTIVE = "active"
+    NOT_FOUND = "not_found"
+    INACTIVE = "inactive"
+    EXPIRED = "expired"
+
+
+@dataclass(frozen=True, slots=True)
+class RedirectResolution:
+    status: RedirectStatus
+    url: URL | None
+
 
 # Basic fetches
 
@@ -59,18 +73,13 @@ def get_urls_for_user(user):
     )
 
 
-RedirectResolutionStatus = Literal["active", "not_found", "inactive", "expired"]
-
-
-def resolve_redirect_url(
-    short_code: str,
-) -> tuple[RedirectResolutionStatus, URL | None]:
+def resolve_redirect_url(short_code: str) -> RedirectResolution:
     """Resolves a short code into redirect eligibility state and URL object."""
     url = get_url_by_code(short_code)
     if url is None:
-        return "not_found", None
+        return RedirectResolution(RedirectStatus.NOT_FOUND, None)
     if not url.is_active:
-        return "inactive", url
-    if url.expires_at is not None and url.expires_at <= timezone.now():
-        return "expired", url
-    return "active", url
+        return RedirectResolution(RedirectStatus.INACTIVE, url)
+    if url.is_expired:
+        return RedirectResolution(RedirectStatus.EXPIRED, url)
+    return RedirectResolution(RedirectStatus.ACTIVE, url)

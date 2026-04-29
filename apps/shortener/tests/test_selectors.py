@@ -13,6 +13,7 @@ from apps.shortener.selectors import (
     get_urls_with_owner,
     get_urls_with_tags,
     resolve_redirect_url,
+    RedirectStatus,
 )
 
 
@@ -189,22 +190,22 @@ class TestGetUrlsForUser:
 class TestResolveRedirectUrl:
 
     def test_returns_active_state(self, url):
-        state, resolved = resolve_redirect_url(url.short_code)
-        assert state == "active"
-        assert resolved is not None
-        assert resolved.pk == url.pk
+        resolution = resolve_redirect_url(url.short_code)
+        assert resolution.status == RedirectStatus.ACTIVE
+        assert resolution.url is not None
+        assert resolution.url.pk == url.pk
 
     def test_returns_not_found_state(self):
-        state, resolved = resolve_redirect_url("missing1")
-        assert state == "not_found"
-        assert resolved is None
+        resolution = resolve_redirect_url("missing1")
+        assert resolution.status == RedirectStatus.NOT_FOUND
+        assert resolution.url is None
 
     def test_returns_inactive_state(self, url_inactive):
-        state, resolved = resolve_redirect_url(url_inactive.short_code)
-        assert state == "inactive"
-        assert resolved is not None
+        resolution = resolve_redirect_url(url_inactive.short_code)
+        assert resolution.status == RedirectStatus.INACTIVE
+        assert resolution.url is not None
 
     def test_returns_expired_state(self, url_expired):
-        state, resolved = resolve_redirect_url(url_expired.short_code)
-        assert state == "expired"
-        assert resolved is not None
+        resolution = resolve_redirect_url(url_expired.short_code)
+        assert resolution.status == RedirectStatus.EXPIRED
+        assert resolution.url is not None

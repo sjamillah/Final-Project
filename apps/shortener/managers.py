@@ -42,3 +42,25 @@ class URLManager(models.Manager):
 
     def popular(self, threshold=100):
         return self.popular_urls(threshold)
+
+    def get_or_create_by_original(self, original_url: str, owner=None):
+        """Convenience helper to get or create a URL by its original URL and owner.
+
+        This performs a simple `get_or_create` with a generated `short_code` default.
+        It does not attempt sophisticated retry handling for short-code collisions;
+        callers that need stronger guarantees should use a transactional write
+        in the service layer.
+        """
+        import secrets
+        import string
+
+        CODE_LENGTH = 6
+
+        def _gen_code() -> str:
+            alphabet = string.ascii_letters + string.digits
+            return "".join(secrets.choice(alphabet) for _ in range(CODE_LENGTH))
+
+        defaults = {"short_code": _gen_code()}
+        return self.get_or_create(
+            original_url=original_url, owner=owner, defaults=defaults
+        )
