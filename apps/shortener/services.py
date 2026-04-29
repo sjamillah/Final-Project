@@ -1,10 +1,13 @@
+import logging
 import secrets
 import string
 
 from django.db import IntegrityError, transaction
 
-from .models import URL
 from .exceptions import UniqueCodeError
+from .models import URL
+
+logger = logging.getLogger(__name__)
 
 ALPHABET = string.ascii_letters + string.digits
 CODE_LENGTH = 6
@@ -24,21 +27,25 @@ def _unique_code() -> str:
 
 
 def create_short_url(original_url: str) -> URL:
-    # Try to return existing or create atomically using manager helper.
     last_exc = None
     for _ in range(MAX_RETRIES):
         code = _generate_code()
         try:
             with transaction.atomic():
-                obj, created = URL.objects.get_or_create(
+                obj, _created = URL.objects.get_or_create(
                     original_url=original_url, defaults={"short_code": code}
                 )
+                logger.info("Resolved short URL for %s", original_url)
                 return obj
         except IntegrityError as exc:
-            # possible race on short_code unique constraint — try again
             last_exc = exc
+            logger.warning(
+                "IntegrityError while creating short URL for %s; retrying",
+                original_url,
+            )
             continue
 
+    logger.error("Failed to create short URL for %s after retries", original_url)
     raise UniqueCodeError(
         "Failed to create a unique short code after retries."
     ) from last_exc

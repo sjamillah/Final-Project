@@ -1,3 +1,5 @@
+import logging
+
 from django.shortcuts import redirect
 from rest_framework import status
 from rest_framework.request import Request
@@ -7,6 +9,8 @@ from drf_spectacular.utils import OpenApiParameter, extend_schema
 
 from apps.shortener.services import create_short_url, get_url_by_code
 from .serializers import URLCreateSerializer, URLResponseSerializer
+
+logger = logging.getLogger(__name__)
 
 
 class URLCreateView(APIView):
@@ -20,6 +24,9 @@ class URLCreateView(APIView):
         serializer.is_valid(raise_exception=True)
 
         url = create_short_url(serializer.validated_data["original_url"])
+        logger.info(
+            "Created short URL for %s", serializer.validated_data["original_url"]
+        )
         response = URLResponseSerializer(url)
 
         return Response(response.data, status=status.HTTP_201_CREATED)
@@ -43,8 +50,10 @@ class URLRedirectView(APIView):
         url = get_url_by_code(short_code)
 
         if not url:
+            logger.warning("Short code not found: %s", short_code)
             return Response(
                 {"detail": "Short code not found."}, status=status.HTTP_404_NOT_FOUND
             )
 
+        logger.info("Redirecting short code %s", short_code)
         return redirect(url.original_url)
