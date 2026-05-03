@@ -12,10 +12,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - &checkout-step
+        name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - &setup-python-step
+        name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.10"
@@ -29,7 +31,7 @@ jobs:
         run: poetry install --no-interaction
 
       - name: Run Black check
-        run: poetry run black --check .
+        run: poetry run black --check --target-version py310 apps config manage.py
 
       - name: Run Ruff check
         run: poetry run ruff check .
@@ -46,13 +48,8 @@ jobs:
       DEBUG: "True"
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.10"
+      - *checkout-step
+      - *setup-python-step
 
       - name: Install Poetry
         run: |
@@ -63,4 +60,4 @@ jobs:
         run: poetry install --no-interaction
 
       - name: Run tests
-        run: poetry run python manage.py test
+        run: poetry run pytest -q --cov=apps --cov-report=term-missing
