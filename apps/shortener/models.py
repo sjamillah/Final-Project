@@ -56,19 +56,16 @@ class URL(models.Model):
         max_length=255,
         null=True,
         blank=True,
-        unique=True,
     )
     description = models.CharField(
         max_length=255,
         null=True,
         blank=True,
-        unique=True,
     )
     favicon = models.CharField(
         max_length=2048,
         null=True,
         blank=True,
-        unique=True,
     )
     click_count = models.PositiveIntegerField(default=0)
     is_active = models.BooleanField(default=True)
