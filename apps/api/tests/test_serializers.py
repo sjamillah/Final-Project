@@ -1,5 +1,5 @@
 import pytest
-from apps.api.v1.serializers import URLCreateSerializer, URLResponseSerializer
+from apps.api.v1.url_serializers import URLCreateSerializer, URLResponseSerializer
 
 
 class TestURLCreateSerializer:
@@ -45,7 +45,20 @@ class TestURLResponseSerializer:
 
     def test_contains_expected_fields(self, url):
         s = URLResponseSerializer(url)
-        assert set(s.data.keys()) == {"short_code", "original_url", "created_at"}
+        assert set(s.data.keys()) == {
+            "id",
+            "original_url",
+            "short_code",
+            "custom_alias",
+            "short_url",
+            "title",
+            "click_count",
+            "is_active",
+            "expires_at",
+            "tags",
+            "owner_username",
+            "created_at",
+        }
 
     def test_short_code_correct(self, url):
         s = URLResponseSerializer(url)
@@ -58,3 +71,7 @@ class TestURLResponseSerializer:
     def test_created_at_present(self, url):
         s = URLResponseSerializer(url)
         assert s.data["created_at"] is not None
+
+    def test_short_url_uses_short_code_when_no_alias(self, url):
+        s = URLResponseSerializer(url)
+        assert s.data["short_url"] == f"/{url.short_code}/"
