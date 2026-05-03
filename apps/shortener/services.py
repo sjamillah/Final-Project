@@ -8,7 +8,6 @@ from django.utils import timezone
 
 from apps.shortener.models import Tag, URL, Click
 
-
 ALPHABET = string.ascii_letters + string.digits
 CODE_LENGTH = 6
 MAX_RETRIES = 10
