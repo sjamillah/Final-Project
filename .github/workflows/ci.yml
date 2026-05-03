@@ -12,12 +12,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - &checkout-step
-        name: Checkout code
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - &setup-python-step
-        name: Set up Python
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.10"
@@ -48,8 +46,13 @@ jobs:
       DEBUG: "True"
 
     steps:
-      - *checkout-step
-      - *setup-python-step
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
 
       - name: Install Poetry
         run: |
