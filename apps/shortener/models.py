@@ -2,8 +2,6 @@ from django.contrib.auth.models import AbstractUser  # type: ignore[reportMissin
 from django.db import models  # type: ignore[reportMissingImports]
 from django.utils import timezone  # type: ignore[reportMissingImports]
 
-from .managers import URLManager
-
 
 class User(AbstractUser):
     class Tier(models.TextChoices):
