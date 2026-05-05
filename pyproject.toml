@@ -33,3 +33,10 @@ dev = [
     "ruff (>=0.15.10,<0.16.0)",
     "mypy (>=1.20.1,<2.0.0)"
 ]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings.dev"
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+addopts = "-v --tb=short"

@@ -3,4 +3,4 @@ class ShortenerError(Exception):
 
 
 class UniqueCodeError(ShortenerError):
-    """Raised when a unique short code cannot be generated or persisted."""
+    """Raised when the service fails to generate a unique short code."""
