@@ -40,6 +40,8 @@ class ClickMetadata:
         )
 
 
+logger = logging.getLogger(__name__)
+
 ALPHABET = string.ascii_letters + string.digits
 CODE_LENGTH = 6
 MAX_RETRIES = 5

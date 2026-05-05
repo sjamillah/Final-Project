@@ -35,6 +35,9 @@ class URLCreateView(APIView):
         serializer.is_valid(raise_exception=True)
 
         url = create_short_url(serializer.validated_data["original_url"])
+        logger.info(
+            "Created short URL for %s", serializer.validated_data["original_url"]
+        )
         response = URLResponseSerializer(url)
 
         return Response(response.data, status=status.HTTP_201_CREATED)
@@ -82,4 +85,5 @@ class URLRedirectView(APIView):
                 extra={"short_code": short_code, "url_id": url.pk},
             )
 
+        logger.info("Redirecting short code %s", short_code)
         return redirect(url.original_url)
