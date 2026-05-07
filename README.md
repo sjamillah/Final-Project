@@ -118,12 +118,20 @@ poetry run pytest -v
 │  └──────────────────────────────────────────────────┘   │
 │                                                          │
 │  ┌──────────────────────────────────────────────────┐   │
-│  │      Business Logic Layer (apps/shortener)      │   │
-│  │  • services.py: Core URL creation/update logic  │   │
-│  │  • selectors.py: Optimized query helpers        │   │
-│  │  • analytics.py: Click stats aggregation        │   │
-│  │  • permissions.py: Authorization rules          │   │
-│  │  • throttles.py: Rate limiting                  │   │
+│  │          Domain Layer (apps/users +             │   │
+│  │                apps/shortener)                  │   │
+│  │  • users/services.py, selectors.py              │   │
+│  │  • shortener/services.py (write operations)     │   │
+│  │  • shortener/selectors.py (read operations)     │   │
+│  │  • shortener/analytics.py (aggregations)        │   │
+│  └──────────────────────────────────────────────────┘   │
+│                                                          │
+│  ┌──────────────────────────────────────────────────┐   │
+│  │             API Layer (apps/api/v1)             │   │
+│  │  • views.py: HTTP orchestration                 │   │
+│  │  • serializers.py: request/response validation  │   │
+│  │  • permissions.py: DRF permission classes       │   │
+│  │  • apps/api/throttles.py: DRF throttle classes  │   │
 │  └──────────────────────────────────────────────────┘   │
 │                                                          │
 │  ┌──────────────────────────────────────────────────┐   │
@@ -423,22 +431,34 @@ class Tag(Model):
 Final-Project/
 ├── apps/
 │   ├── api/
+│   │   ├── throttles.py
 │   │   └── v1/
-│   │       ├── auth_serializers.py
-│   │       ├── auth_views.py
-│   │       ├── url_serializers.py
-│   │       ├── url_views.py
+│   │       ├── permissions.py
+│   │       ├── auth/
+│   │       │   ├── serializers.py
+│   │       │   ├── views.py
+│   │       │   └── urls.py
+│   │       ├── links/
+│   │       │   ├── serializers.py
+│   │       │   ├── views.py
+│   │       │   └── urls.py
+│   │       ├── analytics/
+│   │       │   ├── views.py
+│   │       │   └── urls.py
 │   │       └── urls.py
 │   ├── core/
 │   │   └── (placeholder)
+│   ├── users/
+│   │   ├── models.py
+│   │   ├── services.py
+│   │   ├── selectors.py
+│   │   └── migrations/
 │   └── shortener/
 │       ├── models.py
 │       ├── managers.py
 │       ├── selectors.py
 │       ├── services.py
 │       ├── analytics.py
-│       ├── permissions.py
-│       ├── throttles.py
 │       ├── migrations/
 │       └── tests/
 ├── config/
