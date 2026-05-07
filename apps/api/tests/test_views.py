@@ -64,7 +64,7 @@ class TestURLCreateView:
     def test_get_returns_empty_list_for_new_user(self, auth_client):
         response = auth_client.get("/api/v1/urls/")
         assert response.status_code == 200
-        assert response.data == []
+        assert response.data["results"] == []
 
 
 @pytest.mark.django_db
@@ -115,7 +115,9 @@ class TestURLRedirectView:
         assert url.click_count == 1
 
     def test_redirect_still_works_when_click_tracking_fails(self, client, url):
-        with patch("apps.api.v1.url_views.create_click_for_url", side_effect=Exception):
+        with patch(
+            "apps.api.v1.links.views.create_click_for_url", side_effect=Exception
+        ):
             response = client.get(f"/{url.short_code}/")
         assert response.status_code == 302
         assert response["Location"] == url.original_url

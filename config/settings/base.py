@@ -19,6 +19,7 @@ INSTALLED_APPS = [
     "rest_framework_simplejwt.token_blacklist",
     "drf_spectacular",
     "apps.core",
+    "apps.users",
     "apps.shortener",
     "apps.api",
 ]
@@ -48,7 +49,7 @@ ROOT_URLCONF = "config.urls"
 
 DATABASES = {"default": env.db("DATABASE_URL")}
 
-AUTH_USER_MODEL = "shortener.User"
+AUTH_USER_MODEL = "users.User"
 
 REST_FRAMEWORK = {
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",

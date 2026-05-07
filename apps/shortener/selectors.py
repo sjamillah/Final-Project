@@ -72,11 +72,12 @@ def get_url_by_code(short_code: str) -> URL | None:
     )
 
 
-def get_urls_for_user(user):
-    """All URLs belonging to a user. Tags prefetched for safe iteration."""
-    return (
-        URL.objects.filter(owner=user).prefetch_related("tags").order_by("-created_at")
-    )
+def get_urls_for_user(user, tag: str | None = None):
+    """All URLs belonging to a user. Optionally filtered by tag name."""
+    qs = URL.objects.filter(owner=user).prefetch_related("tags").order_by("-created_at")
+    if tag:
+        qs = qs.filter(tags__name__iexact=tag)
+    return qs
 
 
 def resolve_redirect_url(short_code: str) -> RedirectResolution:

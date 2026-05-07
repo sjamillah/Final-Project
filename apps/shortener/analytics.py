@@ -1,6 +1,8 @@
-from django.db.models import Count, Max  # type: ignore[reportMissingImports]
-from django.utils import timezone  # type: ignore[reportMissingImports]
 from datetime import timedelta  # type: ignore[reportMissingImports]
+
+from django.db.models import Count, Max  # type: ignore[reportMissingImports]
+from django.db.models.functions import TruncDate  # type: ignore[reportMissingImports]
+from django.utils import timezone  # type: ignore[reportMissingImports]
 
 from .models import Click, URL
 
@@ -21,10 +23,8 @@ def get_clicks_by_country(url: URL):
 
 
 def get_most_popular_urls(limit: int = 10):
-    """Returns the top N URLs ranked by annotated click count."""
-    return URL.objects.annotate(total_clicks=Count("clicks")).order_by("-total_clicks")[
-        :limit
-    ]
+    """Returns the top N URLs ranked by click count."""
+    return URL.objects.order_by("-click_count")[:limit]
 
 
 def get_recent_clicks(url: URL, limit: int = 20):
@@ -44,6 +44,18 @@ def get_clicks_last_n_days(url: URL, days: int = 7):
         .values("country")
         .annotate(total=Count("id"))
         .order_by("-total")
+    )
+
+
+def get_clicks_per_day(url: URL, days: int = 30):
+    """Groups clicks for a URL by calendar date for time-series charting."""
+    since = timezone.now() - timedelta(days=days)
+    return (
+        Click.objects.filter(url=url, clicked_at__gte=since)
+        .annotate(date=TruncDate("clicked_at"))
+        .values("date")
+        .annotate(total=Count("id"))
+        .order_by("date")
     )
 
 

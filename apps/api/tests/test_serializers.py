@@ -1,5 +1,5 @@
 import pytest
-from apps.api.v1.url_serializers import URLCreateSerializer, URLResponseSerializer
+from apps.api.v1.links.serializers import URLCreateSerializer, URLResponseSerializer
 
 
 class TestURLCreateSerializer:

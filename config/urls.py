@@ -2,7 +2,7 @@ from django.urls import include, path
 from rest_framework.permissions import AllowAny
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
-from apps.api.v1.url_views import URLRedirectView
+from apps.api.v1.links.views import URLRedirectView
 
 urlpatterns = [
     path("api/v1/", include("apps.api.v1.urls")),

@@ -2,7 +2,8 @@ import pytest
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from apps.shortener.models import User, URL
+from apps.users.models import User
+from apps.shortener.models import URL
 
 
 @pytest.fixture
@@ -231,7 +232,7 @@ class TestURLEndpointProtection:
         client, user = auth_client_free
         response = client.get("/api/v1/urls/")
         assert response.status_code == 200
-        assert isinstance(response.data, list)
+        assert isinstance(response.data["results"], list)
 
     def test_authenticated_can_post_urls(self, auth_client_free):
         client, user = auth_client_free
@@ -385,7 +386,7 @@ class TestAnalyticsPermissions:
             short_code="abc123",
             owner=user,
         )
-        response = client.get(f"/api/v1/urls/{url.short_code}/analytics/")
+        response = client.get(f"/api/v1/analytics/{url.short_code}/")
         assert response.status_code == 403
 
     def test_premium_user_can_access_own_analytics(
@@ -397,7 +398,7 @@ class TestAnalyticsPermissions:
             short_code="abc123",
             owner=user,
         )
-        response = client.get(f"/api/v1/urls/{url.short_code}/analytics/")
+        response = client.get(f"/api/v1/analytics/{url.short_code}/")
         assert response.status_code == 200
         assert "total_clicks" in response.data
         assert "clicks_by_country" in response.data
@@ -411,7 +412,7 @@ class TestAnalyticsPermissions:
             short_code="abc123",
             owner=free_user,
         )
-        response = client.get(f"/api/v1/urls/{url.short_code}/analytics/")
+        response = client.get(f"/api/v1/analytics/{url.short_code}/")
         assert response.status_code == 403
 
     def test_admin_can_access_any_analytics(self, client, admin_user, premium_user):
@@ -423,7 +424,7 @@ class TestAnalyticsPermissions:
             short_code="abc123",
             owner=premium_user,
         )
-        response = client.get(f"/api/v1/urls/{url.short_code}/analytics/")
+        response = client.get(f"/api/v1/analytics/{url.short_code}/")
         assert response.status_code == 200
 
 

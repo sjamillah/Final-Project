@@ -1,49 +1,18 @@
 import django.contrib.auth.models
 import django.contrib.auth.validators
-import django.db.models.deletion
 import django.utils.timezone
 from django.db import migrations, models
-
-DEFAULT_TAGS = ["Marketing", "Social", "Work", "Personal"]
-
-
-def seed_tags(apps, schema_editor):
-    Tag = apps.get_model("shortener", "Tag")
-    for name in DEFAULT_TAGS:
-        Tag.objects.get_or_create(name=name)
-
-
-def reverse_seed_tags(apps, schema_editor):
-    Tag = apps.get_model("shortener", "Tag")
-    Tag.objects.filter(name__in=DEFAULT_TAGS).delete()
 
 
 class Migration(migrations.Migration):
 
+    initial = True
+
     dependencies = [
         ("auth", "0012_alter_user_first_name_max_length"),
-        ("shortener", "0001_initial"),
     ]
 
     operations = [
-        migrations.CreateModel(
-            name="Tag",
-            fields=[
-                (
-                    "id",
-                    models.BigAutoField(
-                        auto_created=True,
-                        primary_key=True,
-                        serialize=False,
-                        verbose_name="ID",
-                    ),
-                ),
-                ("name", models.CharField(max_length=50, unique=True)),
-            ],
-            options={
-                "db_table": "tags",
-            },
-        ),
         migrations.CreateModel(
             name="User",
             fields=[
@@ -116,7 +85,7 @@ class Migration(migrations.Migration):
                     "is_active",
                     models.BooleanField(
                         default=True,
-                        help_text="Designates whether this user should be treated as active. Unselect this instead of deleting accounts.",
+                        help_text="Designates whether this user should be treated as active.",
                         verbose_name="active",
                     ),
                 ),
@@ -143,7 +112,7 @@ class Migration(migrations.Migration):
                     "groups",
                     models.ManyToManyField(
                         blank=True,
-                        help_text="The groups this user belongs to. A user will get all permissions granted to each of their groups.",
+                        help_text="The groups this user belongs to.",
                         related_name="user_set",
                         related_query_name="user",
                         to="auth.group",
@@ -162,32 +131,7 @@ class Migration(migrations.Migration):
                     ),
                 ),
             ],
-            options={
-                "db_table": "users",
-            },
-            managers=[
-                ("objects", django.contrib.auth.models.UserManager()),
-            ],
+            options={"db_table": "users"},
+            managers=[("objects", django.contrib.auth.models.UserManager())],
         ),
-        migrations.AddField(
-            model_name="url",
-            name="custom_alias",
-            field=models.CharField(blank=True, max_length=50, null=True, unique=True),
-        ),
-        migrations.AddField(
-            model_name="url",
-            name="title",
-            field=models.CharField(blank=True, max_length=255, null=True, unique=True),
-        ),
-        migrations.AddField(
-            model_name="url",
-            name="description",
-            field=models.CharField(blank=True, max_length=255, null=True, unique=True),
-        ),
-        migrations.AddField(
-            model_name="url",
-            name="favicon",
-            field=models.CharField(blank=True, max_length=2048, null=True, unique=True),
-        ),
-        migrations.RunPython(seed_tags, reverse_code=reverse_seed_tags),
     ]
