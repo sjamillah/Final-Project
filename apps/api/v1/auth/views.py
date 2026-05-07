@@ -8,9 +8,9 @@ from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 from drf_spectacular.utils import extend_schema
 
-from apps.shortener.models import User
-from apps.shortener.throttles import LoginRateThrottle
-from .auth_serializers import (
+from apps.users.models import User
+from apps.api.throttles import LoginRateThrottle
+from .serializers import (
     AuthResponseSerializer,
     LoginSerializer,
     LogoutSerializer,

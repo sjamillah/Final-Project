@@ -4,19 +4,6 @@ from apps.shortener.models import Tag, URL
 
 
 def validate_custom_alias_uniqueness(value, exclude_pk=None):
-    """
-    Validate that a custom alias is unique and not already taken as a short code.
-
-    Args:
-        value: The custom alias to validate
-        exclude_pk: Optional URL instance PK to exclude from check (for updates)
-
-    Raises:
-        serializers.ValidationError: If alias is taken or invalid format
-
-    Returns:
-        The validated value
-    """
     if not value:
         return value
 
