@@ -27,6 +27,13 @@ class URLAnalyticsView(APIView):
         if not url:
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
 
+        # Check ownership: user must be the URL owner or an admin
+        if url.owner != request.user and not request.user.is_staff:
+            return Response(
+                {"detail": "You do not have permission to view this analytics."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         summary = (
             get_click_summary_per_url()
             .filter(pk=url.pk)

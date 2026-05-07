@@ -98,7 +98,7 @@ class TestGetMostPopularUrls:
             click_count=500,
         )
         result = list(get_most_popular_urls(limit=10))
-        assert result[0].total_clicks >= result[-1].total_clicks
+        assert result[0].click_count >= result[-1].click_count
 
     def test_default_limit_is_ten(self, db, user):
         for i in range(15):
