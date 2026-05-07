@@ -7,6 +7,7 @@ from django.db.models import F, Q
 from django.utils import timezone
 
 from apps.shortener.models import Tag, URL, Click
+from apps.shortener.exceptions import UniqueCodeError
 
 ALPHABET = string.ascii_letters + string.digits
 CODE_LENGTH = 6
@@ -71,7 +72,7 @@ def resolve_short_code(custom_alias: str | None) -> str:
         if not URL.objects.filter(short_code=code).exists():
             return code
 
-    raise RuntimeError(
+    raise UniqueCodeError(
         f"Could not generate a unique short code after {MAX_RETRIES} attempts."
     )
 
@@ -155,7 +156,7 @@ def create_short_url(
                 return existing
             raise
     else:
-        raise RuntimeError("Failed to create URL after multiple retries.")
+        raise UniqueCodeError("Failed to create URL after multiple retries.")
 
     if tag_names:
         tags = get_or_create_tags(tag_names)
