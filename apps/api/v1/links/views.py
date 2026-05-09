@@ -11,7 +11,14 @@ from rest_framework.throttling import AnonRateThrottle
 from rest_framework.views import APIView
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 
+from apps.api.throttles import URLCreateRateThrottle
 from apps.api.v1.permissions import IsOwner
+from apps.shortener.cache import cache_redirect_url, get_cached_redirect
+from apps.shortener.exceptions import (
+    AliasAlreadyTaken,
+    PremiumFeatureRequired,
+    URLLimitExceeded,
+)
 from apps.shortener.selectors import (
     RedirectStatus,
     get_url_by_code_with_owner,
@@ -20,20 +27,31 @@ from apps.shortener.selectors import (
 )
 from apps.shortener.services import (
     build_click_metadata,
-    create_click_for_url,
     create_short_url,
     deactivate_url,
     update_url,
 )
-from apps.api.throttles import URLCreateRateThrottle
+from apps.shortener.tasks import track_click_task
 
-from .serializers import (
-    URLCreateSerializer,
-    URLResponseSerializer,
-    URLUpdateSerializer,
-)
+from .serializers import URLCreateSerializer, URLResponseSerializer, URLUpdateSerializer
 
 logger = logging.getLogger(__name__)
+
+
+def _dispatch_click_tracking(url_id: int, metadata, short_code: str) -> None:
+    """Fire-and-forget click tracking. Logs on failure; never raises."""
+    try:
+        track_click_task.delay(
+            url_id=url_id,
+            ip_address=metadata.ip_address,
+            user_agent=metadata.user_agent,
+            referrer=metadata.referrer,
+        )
+    except Exception:
+        logger.exception(
+            "redirect_click_tracking_failed",
+            extra={"short_code": short_code, "url_id": url_id},
+        )
 
 
 class LinkPagination(PageNumberPagination):
@@ -66,7 +84,6 @@ class URLListCreateView(APIView):
     def get(self, request: Request) -> Response:
         tag = request.query_params.get("tag")
         urls = get_urls_for_user(request.user, tag=tag)
-
         paginator = LinkPagination()
         page = paginator.paginate_queryset(urls, request)
         serializer = URLResponseSerializer(
@@ -74,10 +91,7 @@ class URLListCreateView(APIView):
         )
         return paginator.get_paginated_response(serializer.data)
 
-    @extend_schema(
-        request=URLCreateSerializer,
-        responses={201: URLResponseSerializer},
-    )
+    @extend_schema(request=URLCreateSerializer, responses={201: URLResponseSerializer})
     def post(self, request: Request) -> Response:
         serializer = URLCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -91,8 +105,10 @@ class URLListCreateView(APIView):
                 expires_at=serializer.validated_data.get("expires_at"),
                 tag_names=serializer.validated_data.get("tags", []),
             )
-        except ValueError as exc:
+        except (URLLimitExceeded, PremiumFeatureRequired) as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
+        except AliasAlreadyTaken as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
 
         return Response(
             URLResponseSerializer(url, context={"request": request}).data,
@@ -121,47 +137,38 @@ class URLDetailView(APIView):
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
         return Response(URLResponseSerializer(url, context={"request": request}).data)
 
+    def _update(self, request: Request, short_code: str, partial: bool) -> Response:
+        url = self.get_object(short_code, request)
+        if not url:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = URLUpdateSerializer(url, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            updated = update_url(url, serializer.validated_data, request.user)
+        except PremiumFeatureRequired as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
+        except AliasAlreadyTaken as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+
+        return Response(
+            URLResponseSerializer(updated, context={"request": request}).data
+        )
+
     @extend_schema(
         request=URLUpdateSerializer,
         responses={200: URLResponseSerializer, 403: None, 404: None},
     )
     def put(self, request: Request, short_code: str) -> Response:
-        url = self.get_object(short_code, request)
-        if not url:
-            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
-
-        serializer = URLUpdateSerializer(url, data=request.data, partial=False)
-        serializer.is_valid(raise_exception=True)
-
-        try:
-            updated = update_url(url, serializer.validated_data, request.user)
-        except ValueError as exc:
-            return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
-
-        return Response(
-            URLResponseSerializer(updated, context={"request": request}).data
-        )
+        return self._update(request, short_code, partial=False)
 
     @extend_schema(
         request=URLUpdateSerializer,
         responses={200: URLResponseSerializer, 403: None, 404: None},
     )
     def patch(self, request: Request, short_code: str) -> Response:
-        url = self.get_object(short_code, request)
-        if not url:
-            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
-
-        serializer = URLUpdateSerializer(url, data=request.data, partial=True)
-        serializer.is_valid(raise_exception=True)
-
-        try:
-            updated = update_url(url, serializer.validated_data, request.user)
-        except ValueError as exc:
-            return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
-
-        return Response(
-            URLResponseSerializer(updated, context={"request": request}).data
-        )
+        return self._update(request, short_code, partial=True)
 
     @extend_schema(responses={204: None, 404: None})
     def delete(self, request: Request, short_code: str) -> Response:
@@ -184,33 +191,41 @@ class URLRedirectView(APIView):
                 type=str,
                 location=OpenApiParameter.PATH,
                 required=True,
-                description="Short code generated for a URL.",
+                description="Short code or custom alias of the shortened URL.",
             )
         ],
         responses={302: None, 404: None, 410: None},
     )
     def get(self, request: Request, short_code: str) -> HttpResponse:
-        resolution = resolve_redirect_url(short_code)
-        state = resolution.status
-        url = resolution.url
+        metadata = build_click_metadata(request.META)
 
-        if state in {RedirectStatus.NOT_FOUND, RedirectStatus.INACTIVE}:
+        # 1. Cache hit — instant redirect.
+        cached = get_cached_redirect(short_code)
+        if cached:
+            _dispatch_click_tracking(cached["url_id"], metadata, short_code)
+            return redirect(cached["original_url"])
+
+        # 2. Cache miss — resolve from DB.
+        resolution = resolve_redirect_url(short_code)
+
+        if resolution.status in {RedirectStatus.NOT_FOUND, RedirectStatus.INACTIVE}:
             logger.info("redirect_not_found", extra={"short_code": short_code})
             return Response(
                 {"detail": "Short code not found."}, status=status.HTTP_404_NOT_FOUND
             )
-        if state == RedirectStatus.EXPIRED:
+
+        if resolution.status == RedirectStatus.EXPIRED:
             logger.info("redirect_expired", extra={"short_code": short_code})
             return Response(
                 {"detail": "Short code has expired."}, status=status.HTTP_410_GONE
             )
 
-        try:
-            create_click_for_url(url=url, metadata=build_click_metadata(request.META))
-        except Exception:
-            logger.exception(
-                "redirect_click_tracking_failed",
-                extra={"short_code": short_code, "url_id": url.pk},
-            )
+        url = resolution.url
 
+        # Populate cache for subsequent requests.
+        cache_redirect_url(short_code, url.pk, url.original_url)
+        if url.custom_alias:
+            cache_redirect_url(url.custom_alias, url.pk, url.original_url)
+
+        _dispatch_click_tracking(url.pk, metadata, short_code)
         return redirect(url.original_url)
