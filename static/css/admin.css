@@ -1,0 +1,14 @@
+/* Small admin UI tweaks */
+:root{--accent:#0b5cff}
+body#adminlogin, body {
+  font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial;
+}
+/* Make headers cleaner */
+.dashboard-module h2, .module h2 {
+  color: #333;
+}
+/* Slightly increase contrast for sidebar */
+#header, .module, .app-module {
+  background: #fff;
+}
+#branding { font-weight:700; color:var(--accent) }

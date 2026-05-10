@@ -1,0 +1,4 @@
+/* Minor Swagger UI tweaks */
+.swagger-ui .topbar { background: #0b5cff; }
+.swagger-ui .topbar .link { color: #fff }
+.swagger-ui .scheme-container { background: #f7f9fc }
