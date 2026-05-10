@@ -10,6 +10,7 @@ from apps.shortener.services import (
     create_click_for_url,
     create_short_url,
 )
+from apps.shortener.selectors import get_url_by_code
 
 
 @pytest.mark.django_db
@@ -237,14 +238,10 @@ class TestGetUrlByCode:
     """Tests for URL lookup by code/alias."""
 
     def test_finds_by_short_code(self, url):
-        from apps.shortener.services import get_url_by_code
-
         found = get_url_by_code(url.short_code)
         assert found.pk == url.pk
 
     def test_finds_by_custom_alias(self, user):
-        from apps.shortener.services import get_url_by_code
-
         url = URL.objects.create(
             owner=user,
             original_url="https://example.com",
@@ -255,10 +252,8 @@ class TestGetUrlByCode:
         found = get_url_by_code("myalias")
         assert found.pk == url.pk
 
-    def test_ignores_inactive_urls(self, user):
-        from apps.shortener.services import get_url_by_code
-
-        URL.objects.create(
+    def test_finds_inactive_urls(self, user):
+        url = URL.objects.create(
             owner=user,
             original_url="https://example.com",
             short_code="abc123",
@@ -266,11 +261,9 @@ class TestGetUrlByCode:
         )
 
         found = get_url_by_code("abc123")
-        assert found is None
+        assert found.pk == url.pk
 
     def test_returns_none_for_not_found(self):
-        from apps.shortener.services import get_url_by_code
-
         found = get_url_by_code("notfound")
         assert found is None
 

@@ -77,6 +77,14 @@ def resolve_short_code(custom_alias: str | None) -> str:
     )
 
 
+def get_url_by_code(code: str) -> URL | None:
+    """Look up an active URL by short code or custom alias. Returns None for inactive URLs."""
+    return (
+        URL.objects.filter(short_code=code, is_active=True).first()
+        or URL.objects.filter(custom_alias=code, is_active=True).first()
+    )
+
+
 def get_or_create_tags(tag_names: list[str]) -> list[Tag]:
     return [Tag.objects.get_or_create(name=name.strip())[0] for name in tag_names]
 

@@ -16,7 +16,6 @@ RUN poetry install --no-root
 
 FROM base AS development
 
-RUN poetry install --no-root
 COPY . .
 
 EXPOSE 8000
