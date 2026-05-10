@@ -10,3 +10,4 @@ __pycache__/
 .vscode/
 .django-stub-gen/
 .coverage*
+celerybeat-schedule*
