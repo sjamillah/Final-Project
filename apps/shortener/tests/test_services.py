@@ -153,7 +153,9 @@ class TestCheckUrlLimit:
                 is_active=True,
             )
 
-        with pytest.raises(ValueError, match="Free users can only have"):
+        from apps.shortener.exceptions import URLLimitExceeded
+
+        with pytest.raises(URLLimitExceeded, match="Free users can only have"):
             check_url_limit(user)
 
     def test_premium_user_no_limit(self, db):
@@ -194,7 +196,11 @@ class TestCheckCustomAliasPermission:
             is_premium=False,
         )
 
-        with pytest.raises(ValueError, match="Custom aliases are a Premium feature"):
+        from apps.shortener.exceptions import PremiumFeatureRequired
+
+        with pytest.raises(
+            PremiumFeatureRequired, match="Custom aliases are a Premium feature"
+        ):
             check_custom_alias_permission(user, "myalias")
 
     def test_premium_user_can_use_alias(self, db):
