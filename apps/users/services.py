@@ -12,5 +12,6 @@ def create_user(*, username: str, email: str, password: str) -> User:
 def update_user_tier(user: User, tier: str) -> User:
     user.tier = tier
     user.is_premium = tier in (User.Tier.PREMIUM, User.Tier.ADMIN)
-    user.save(update_fields=["tier", "is_premium"])
+    user.is_staff = tier == User.Tier.ADMIN
+    user.save(update_fields=["tier", "is_premium", "is_staff"])
     return user
