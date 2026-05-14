@@ -77,14 +77,6 @@ def resolve_short_code(custom_alias: str | None) -> str:
     )
 
 
-def get_url_by_code(code: str) -> URL | None:
-    """Look up an active URL by short code or custom alias. Returns None for inactive URLs."""
-    return (
-        URL.objects.filter(short_code=code, is_active=True).first()
-        or URL.objects.filter(custom_alias=code, is_active=True).first()
-    )
-
-
 def get_or_create_tags(tag_names: list[str]) -> list[Tag]:
     return [Tag.objects.get_or_create(name=name.strip())[0] for name in tag_names]
 
@@ -154,7 +146,26 @@ def create_short_url(
     if tag_names:
         url.tags.set(get_or_create_tags(tag_names))
 
+    _schedule_preview(url)
+
     return url
+
+
+def _schedule_preview(url: URL) -> None:
+    """
+    Dispatch the preview-fetch task only after the DB transaction commits.
+
+    Why on_commit?
+    The URL creation happens inside transaction.atomic().  If we called
+    .delay() immediately, the Celery worker could pick up the task before
+    Postgres commits the row, causing a DoesNotExist error in the task.
+    on_commit guarantees the row is visible to all readers first.
+    """
+    from apps.shortener.tasks import fetch_url_preview_task
+
+    url_id = url.pk
+    original_url = url.original_url
+    transaction.on_commit(lambda: fetch_url_preview_task.delay(url_id, original_url))
 
 
 def update_url(url: URL, validated_data: dict, user) -> URL:
