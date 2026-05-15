@@ -1,6 +1,6 @@
 # URL Shortener API (Django 5 + PostgreSQL)
 
-A production-grade URL shortening service with JWT authentication, user tiers, analytics, and API documentation.
+A production-grade URL shortening service with JWT authentication, user tiers, analytics, URL preview metadata, and API documentation.
 
 ## Table of Contents
 - [Tech Stack](#tech-stack)
@@ -10,6 +10,7 @@ A production-grade URL shortening service with JWT authentication, user tiers, a
 - [Authentication](#authentication)
 - [Features by Module](#features-by-module)
 - [Module 8 Technical Details](#module-8-technical-details)
+- [Module 9 Technical Details](#module-9-technical-details)
 - [Database Schema](#database-schema)
 - [Development](#development)
 - [Testing](#testing)
@@ -19,12 +20,12 @@ A production-grade URL shortening service with JWT authentication, user tiers, a
 - **Backend**: Python 3.10, Django 5.x, Django REST Framework
 - **Database**: PostgreSQL 15
 - **Caching**: Redis 7 (cache-aside pattern for redirects)
-- **Async Tasks**: Celery 5 + Celery Beat (click tracking, URL cleanup)
+- **Async Tasks**: Celery 5 + Celery Beat (click tracking, URL cleanup, URL preview sync)
 - **Authentication**: JWT via `djangorestframework-simplejwt`
 - **API Docs**: drf-spectacular (OpenAPI 3.0 + Swagger UI)
 - **Admin Interface**: Django Admin with custom base classes
 - **Logging**: JSON structured logging for observability
-- **Containerization**: Docker & Docker Compose
+- **Containerization**: Docker & Docker Compose (API, worker, beat, preview microservice)
 - **Dependency Management**: Poetry
 - **Testing**: pytest & pytest-django with async task fixtures
 - **Code Quality**: Black, Ruff, pre-commit
@@ -57,6 +58,7 @@ This starts:
 - `redis`: Redis cache (port 6380)
 - `celery`: Celery worker for async tasks
 - `celery-beat`: Celery Beat scheduler for nightly cleanup
+- `preview_service`: URL metadata microservice (port 8001)
 
 3. **Access the application**:
 - API: http://localhost:8000/api/v1/
@@ -64,6 +66,7 @@ This starts:
 - Schema (OpenAPI JSON): http://localhost:8000/api/schema/
 - Health Check: http://localhost:8000/api/v1/health/
 - Django Admin: http://localhost:8000/admin/ (staff users)
+- Preview Service Health: http://localhost:8001/health/
 
 4. **View logs**:
 ```bash
@@ -477,6 +480,7 @@ curl -X POST http://localhost:8000/api/v1/auth/logout/ \
 ✅ Redis caching with cache-aside pattern for 80%+ faster redirects  
 ✅ Celery async task queue for click tracking (non-blocking)  
 ✅ Celery Beat scheduled tasks (nightly URL expiry cleanup)  
+✅ URL preview metadata fetched asynchronously after URL creation/update  
 ✅ JSON structured logging for error tracking and observability  
 ✅ Service health monitoring endpoint (database + Redis checks)  
 ✅ Django admin interface for operator management and data browsing  
@@ -484,6 +488,15 @@ curl -X POST http://localhost:8000/api/v1/auth/logout/ \
 ✅ ACID-compliant transactions for multi-step database operations  
 ✅ Docker Compose services for Redis, Celery worker, and Celery Beat  
 ✅ Comprehensive test fixtures for isolated async and caching tests  
+
+### Module 9: URL Preview Microservice
+✅ Separate Django preview service for extracting page metadata  
+✅ Preview endpoint returns title, description, and favicon from target URLs  
+✅ Asynchronous dispatch from the main app using Celery + `transaction.on_commit()`  
+✅ Redis-backed circuit breaker to avoid hammering failing domains  
+✅ Fallback-safe parsing with BeautifulSoup and lxml  
+✅ API responses include preview metadata once available  
+✅ Dedicated Docker Compose service for the preview workerless microservice  
 
 ---
 
@@ -567,6 +580,38 @@ GET /api/v1/health/
        │
        └─→ Return 200 (OK) or 503 (Degraded)
 ```
+
+## Module 9 Technical Details
+
+### Preview Metadata Pipeline
+```
+URL created or updated
+    │
+    ├─→ Transaction commits successfully
+    │
+    ├─→ on_commit() schedules fetch_url_preview_task
+    │
+    ├─→ Celery worker calls preview_service /api/preview/
+    │
+    ├─→ preview_service fetches and parses metadata
+    │
+    └─→ URL row updated with title, description, favicon
+```
+
+**Benefits:**
+- Keeps URL creation fast while metadata loads in the background
+- Avoids race conditions by dispatching only after the database commit completes
+- Limits repeated failures with a per-domain circuit breaker in Redis
+- Lets the main API return preview fields as soon as they are available
+
+### Preview Service Endpoints
+- `POST /api/preview/` on port 8001: fetches metadata for an arbitrary URL
+- `GET /health/` on port 8001: lightweight service health check
+
+### Preview Metadata Storage
+- `title`, `description`, and `favicon` live on the `URL` model
+- The fields are optional so URLs can exist before preview data is fetched
+- The API serializer includes these fields in URL responses for the UI and clients
 
 ### Django Admin Interface
 - **Operator Access**: Browse users, URLs, clicks without code access
@@ -693,12 +738,26 @@ ALLOWED_HOSTS=localhost,127.0.0.1
 REDIS_URL=redis://localhost:6379/0
 CELERY_BROKER_URL=redis://localhost:6379/0
 CELERY_RESULT_BACKEND=redis://localhost:6379/0
+
+# Module 9: URL Preview Microservice
+PREVIEW_SERVICE_URL=http://preview_service:8001
+CORS_ALLOWED_ORIGINS=
+CORS_ALLOW_ALL_ORIGINS=False
+CIRCUIT_BREAKER_FAILURE_THRESHOLD=5
+CIRCUIT_BREAKER_RECOVERY_TIMEOUT=300
 ```
 
 **Module 8 Environment Breakdown:**
 - `REDIS_URL`: Redis connection for cache-aside pattern (24-hour TTL for redirects)
 - `CELERY_BROKER_URL`: Redis connection for Celery task queue (click tracking, cleanup)
 - `CELERY_RESULT_BACKEND`: Redis for Celery task results (same broker for simplicity)
+
+**Module 9 Environment Breakdown:**
+- `PREVIEW_SERVICE_URL`: Base URL for the preview metadata microservice
+- `CORS_ALLOWED_ORIGINS`: Exact frontend origins allowed to call the API in production
+- `CORS_ALLOW_ALL_ORIGINS`: Development-friendly CORS toggle when no frontend origin list is needed
+- `CIRCUIT_BREAKER_FAILURE_THRESHOLD`: Number of preview failures before a domain is temporarily blocked
+- `CIRCUIT_BREAKER_RECOVERY_TIMEOUT`: Cooldown window, in seconds, before retrying an open circuit
 
 ### Code Style
 ```bash
