@@ -128,3 +128,226 @@ class TestBuildClickMetadata:
             }
         )
         assert data.ip_address == "1.1.1.1"
+
+
+@pytest.mark.django_db
+class TestCheckUrlLimit:
+    """Tests for free tier URL limit enforcement."""
+
+    def test_free_user_reaches_limit_raises_error(self, db):
+        from apps.users.models import User
+        from apps.shortener.services import check_url_limit
+
+        user = User.objects.create_user(
+            username="freeuser",
+            email="free@test.com",
+            password="Pass123!",
+            is_premium=False,
+        )
+        # Create 10 active URLs
+        for i in range(10):
+            URL.objects.create(
+                owner=user,
+                original_url=f"https://example.com/{i}",
+                short_code=f"code{i:02d}",
+                is_active=True,
+            )
+
+        with pytest.raises(ValueError, match="Free users can only have"):
+            check_url_limit(user)
+
+    def test_premium_user_no_limit(self, db):
+        from apps.users.models import User
+        from apps.shortener.services import check_url_limit
+
+        user = User.objects.create_user(
+            username="premiumuser",
+            email="premium@test.com",
+            password="Pass123!",
+            is_premium=True,
+        )
+        # Create 15 URLs (exceeds free limit)
+        for i in range(15):
+            URL.objects.create(
+                owner=user,
+                original_url=f"https://example.com/{i}",
+                short_code=f"code{i:02d}",
+                is_active=True,
+            )
+
+        # Should not raise
+        check_url_limit(user)
+
+
+@pytest.mark.django_db
+class TestCheckCustomAliasPermission:
+    """Tests for custom alias permission enforcement."""
+
+    def test_free_user_cannot_use_custom_alias(self, db):
+        from apps.users.models import User
+        from apps.shortener.services import check_custom_alias_permission
+
+        user = User.objects.create_user(
+            username="freeuser",
+            email="free@test.com",
+            password="Pass123!",
+            is_premium=False,
+        )
+
+        with pytest.raises(ValueError, match="Custom aliases are a Premium feature"):
+            check_custom_alias_permission(user, "myalias")
+
+    def test_premium_user_can_use_alias(self, db):
+        from apps.users.models import User
+        from apps.shortener.services import check_custom_alias_permission
+
+        user = User.objects.create_user(
+            username="premiumuser",
+            email="premium@test.com",
+            password="Pass123!",
+            is_premium=True,
+        )
+
+        # Should not raise
+        check_custom_alias_permission(user, "myalias")
+
+    def test_none_alias_allowed(self, db):
+        from apps.users.models import User
+        from apps.shortener.services import check_custom_alias_permission
+
+        user = User.objects.create_user(
+            username="freeuser",
+            email="free@test.com",
+            password="Pass123!",
+            is_premium=False,
+        )
+
+        # Should not raise for None
+        check_custom_alias_permission(user, None)
+
+
+@pytest.mark.django_db
+class TestGetUrlByCode:
+    """Tests for URL lookup by code/alias."""
+
+    def test_finds_by_short_code(self, url):
+        from apps.shortener.services import get_url_by_code
+
+        found = get_url_by_code(url.short_code)
+        assert found.pk == url.pk
+
+    def test_finds_by_custom_alias(self, user):
+        from apps.shortener.services import get_url_by_code
+
+        url = URL.objects.create(
+            owner=user,
+            original_url="https://example.com",
+            short_code="abc123",
+            custom_alias="myalias",
+        )
+
+        found = get_url_by_code("myalias")
+        assert found.pk == url.pk
+
+    def test_ignores_inactive_urls(self, user):
+        from apps.shortener.services import get_url_by_code
+
+        URL.objects.create(
+            owner=user,
+            original_url="https://example.com",
+            short_code="abc123",
+            is_active=False,
+        )
+
+        found = get_url_by_code("abc123")
+        assert found is None
+
+    def test_returns_none_for_not_found(self):
+        from apps.shortener.services import get_url_by_code
+
+        found = get_url_by_code("notfound")
+        assert found is None
+
+
+@pytest.mark.django_db
+class TestUpdateUrl:
+    """Tests for URL update operations."""
+
+    def test_updates_title(self, user):
+        from apps.shortener.services import update_url
+
+        url = URL.objects.create(
+            owner=user,
+            original_url="https://example.com",
+            short_code="abc123",
+            title="Old Title",
+        )
+
+        updated = update_url(url, {"title": "New Title"}, user)
+        assert updated.title == "New Title"
+        assert URL.objects.get(pk=url.pk).title == "New Title"
+
+    def test_update_with_tags(self, user):
+        from apps.shortener.services import update_url
+
+        url = URL.objects.create(
+            owner=user,
+            original_url="https://example.com",
+            short_code="abc123",
+        )
+
+        updated = update_url(url, {"title": "New", "tags": ["python", "django"]}, user)
+        assert {t.name for t in updated.tags.all()} == {"python", "django"}
+
+
+@pytest.mark.django_db
+class TestDeactivateUrl:
+    """Tests for soft delete operation."""
+
+    def test_deactivates_url(self, url):
+        from apps.shortener.services import deactivate_url
+
+        assert url.is_active is True
+
+        deactivated = deactivate_url(url)
+
+        assert deactivated.is_active is False
+        assert URL.objects.get(pk=url.pk).is_active is False
+
+
+@pytest.mark.django_db
+class TestGetOrCreateTags:
+    """Tests for tag creation and reuse."""
+
+    def test_creates_new_tags(self):
+        from apps.shortener.services import get_or_create_tags
+        from apps.shortener.models import Tag
+
+        tags = get_or_create_tags(["unique_python_tag", "unique_django_tag"])
+
+        assert len(tags) == 2
+        assert {t.name for t in tags} == {"unique_python_tag", "unique_django_tag"}
+        # Verify they exist in DB
+        assert Tag.objects.filter(name="unique_python_tag").exists()
+        assert Tag.objects.filter(name="unique_django_tag").exists()
+
+    def test_reuses_existing_tags(self):
+        from apps.shortener.services import get_or_create_tags
+        from apps.shortener.models import Tag
+
+        # Pre-create one tag
+        Tag.objects.create(name="unique_reuse_tag")
+
+        # Get or create both (one new, one existing)
+        tags = get_or_create_tags(["unique_reuse_tag", "unique_new_tag"])
+
+        assert len(tags) == 2
+        assert {t.name for t in tags} == {"unique_reuse_tag", "unique_new_tag"}
+
+    def test_strips_whitespace(self):
+        from apps.shortener.services import get_or_create_tags
+
+        tags = get_or_create_tags(["  unique_python_ws  ", "unique_django_ws"])
+
+        assert tags[0].name == "unique_python_ws"
+        assert tags[1].name == "unique_django_ws"

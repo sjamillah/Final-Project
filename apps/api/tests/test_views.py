@@ -10,53 +10,61 @@ def client():
     return APIClient()
 
 
+@pytest.fixture
+def auth_client(client, user):
+    client.force_authenticate(user=user)
+    return client
+
+
 @pytest.mark.django_db
 class TestURLCreateView:
 
-    def test_creates_short_url(self, client):
-        response = client.post(
-            "/api/urls/",
+    def test_creates_short_url(self, auth_client):
+        response = auth_client.post(
+            "/api/v1/urls/",
             {"original_url": "https://example.com/create"},
             format="json",
         )
         assert response.status_code == 201
+        assert response.data["original_url"] == "https://example.com/create"
         assert "short_code" in response.data
-        assert "original_url" in response.data
-        assert "created_at" in response.data
+        assert "short_url" in response.data
+        assert "owner_username" in response.data
 
-    def test_returns_existing_for_duplicate(self, client):
+    def test_returns_existing_for_duplicate(self, auth_client):
         payload = {"original_url": "https://example.com/dup"}
-        r1 = client.post("/api/urls/", payload, format="json")
-        r2 = client.post("/api/urls/", payload, format="json")
+        r1 = auth_client.post("/api/v1/urls/", payload, format="json")
+        r2 = auth_client.post("/api/v1/urls/", payload, format="json")
         assert r1.status_code == 201
         assert r2.status_code == 201
         assert r1.data["short_code"] == r2.data["short_code"]
 
-    def test_invalid_url_returns_400(self, client):
-        response = client.post(
-            "/api/urls/",
+    def test_invalid_url_returns_400(self, auth_client):
+        response = auth_client.post(
+            "/api/v1/urls/",
             {"original_url": "not-a-url"},
             format="json",
         )
         assert response.status_code == 400
         assert "original_url" in response.data
 
-    def test_missing_url_returns_400(self, client):
-        response = client.post("/api/urls/", {}, format="json")
+    def test_missing_url_returns_400(self, auth_client):
+        response = auth_client.post("/api/v1/urls/", {}, format="json")
         assert response.status_code == 400
 
-    def test_short_code_length(self, client):
-        response = client.post(
-            "/api/urls/",
+    def test_short_code_length(self, auth_client):
+        response = auth_client.post(
+            "/api/v1/urls/",
             {"original_url": "https://example.com/length"},
             format="json",
         )
         assert response.status_code == 201
         assert len(response.data["short_code"]) == 6
 
-    def test_only_post_allowed(self, client):
-        response = client.get("/api/urls/")
-        assert response.status_code == 405
+    def test_get_returns_empty_list_for_new_user(self, auth_client):
+        response = auth_client.get("/api/v1/urls/")
+        assert response.status_code == 200
+        assert response.data["results"] == []
 
 
 @pytest.mark.django_db
@@ -107,7 +115,9 @@ class TestURLRedirectView:
         assert url.click_count == 1
 
     def test_redirect_still_works_when_click_tracking_fails(self, client, url):
-        with patch("apps.api.v1.views.create_click_for_url", side_effect=Exception):
+        with patch(
+            "apps.api.v1.links.views.create_click_for_url", side_effect=Exception
+        ):
             response = client.get(f"/{url.short_code}/")
         assert response.status_code == 302
         assert response["Location"] == url.original_url

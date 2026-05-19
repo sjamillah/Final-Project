@@ -1,7 +1,8 @@
 import pytest
 from django.utils import timezone
 
-from apps.shortener.models import Click, Tag, URL, User
+from apps.shortener.models import Click, Tag, URL
+from apps.users.models import User
 
 
 @pytest.mark.django_db

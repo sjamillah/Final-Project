@@ -1,27 +1,8 @@
-from django.contrib.auth.models import AbstractUser  # type: ignore[reportMissingImports]
-from django.db import models  # type: ignore[reportMissingImports]
-from django.utils import timezone  # type: ignore[reportMissingImports]
+from django.conf import settings
+from django.db import models
+from django.utils import timezone
 
-
-class User(AbstractUser):
-    class Tier(models.TextChoices):
-        FREE = "free", "Free"
-        PREMIUM = "premium", "Premium"
-        ADMIN = "admin", "Admin"
-
-    email = models.EmailField(unique=True)
-    is_premium = models.BooleanField(default=False)
-    tier = models.CharField(
-        max_length=10,
-        choices=Tier.choices,
-        default=Tier.FREE,
-    )
-
-    class Meta:
-        db_table = "users"
-
-    def __str__(self):
-        return self.username
+from .managers import URLManager
 
 
 class Tag(models.Model):
@@ -34,58 +15,20 @@ class Tag(models.Model):
         return self.name
 
 
-class URLManager(models.Manager):
-    def get_by_code(self, code: str):
-        return self.filter(short_code=code).first()
-
-    def create_unique(self, original_url: str, short_code: str):
-        # thin wrapper for explicit intent; transactions handled in services
-        return self.create(original_url=original_url, short_code=short_code)
-
-    def get_or_create_by_original(self, original_url: str, short_code: str):
-        """Attempt to return an existing URL for original_url or create one with short_code.
-
-        Returns a tuple (obj, created).
-        """
-        return self.get_or_create(
-            original_url=original_url, defaults={"short_code": short_code}
-        )
-
-
 class URL(models.Model):
     owner = models.ForeignKey(
-        User,
+        settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="urls",
         null=True,
         blank=True,
     )
     original_url = models.URLField(max_length=2048)
-    short_code = models.CharField(max_length=10, unique=True, db_index=True)
-    custom_alias = models.CharField(
-        max_length=50,
-        null=True,
-        blank=True,
-        unique=True,
-    )
-    title = models.CharField(
-        max_length=255,
-        null=True,
-        blank=True,
-        unique=True,
-    )
-    description = models.CharField(
-        max_length=255,
-        null=True,
-        blank=True,
-        unique=True,
-    )
-    favicon = models.CharField(
-        max_length=2048,
-        null=True,
-        blank=True,
-        unique=True,
-    )
+    short_code = models.CharField(max_length=10, unique=True)
+    custom_alias = models.CharField(max_length=50, null=True, blank=True, unique=True)
+    title = models.CharField(max_length=255, null=True, blank=True, unique=True)
+    description = models.CharField(max_length=255, null=True, blank=True, unique=True)
+    favicon = models.CharField(max_length=2048, null=True, blank=True, unique=True)
     click_count = models.PositiveIntegerField(default=0)
     is_active = models.BooleanField(default=True)
     expires_at = models.DateTimeField(null=True, blank=True)
@@ -108,8 +51,6 @@ class URL(models.Model):
             ),
         ]
         indexes = [
-            models.Index(fields=["short_code"]),
-            models.Index(fields=["owner"]),
             models.Index(fields=["created_at"]),
             models.Index(fields=["click_count"]),
             models.Index(fields=["is_active", "expires_at"]),
@@ -136,10 +77,7 @@ class Click(models.Model):
     class Meta:
         db_table = "clicks"
         indexes = [
-            models.Index(fields=["url"]),
-            models.Index(fields=["clicked_at"]),
             models.Index(fields=["url", "clicked_at"]),
-            models.Index(fields=["country"]),
         ]
 
     def __str__(self):

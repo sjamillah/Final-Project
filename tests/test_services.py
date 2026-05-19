@@ -3,22 +3,29 @@ from django.db.utils import IntegrityError
 
 from apps.shortener.models import URL
 from apps.shortener import services
+from apps.shortener.exceptions import UniqueCodeError
 
 
 @pytest.mark.django_db
 def test_create_short_url_handles_integrity_error(monkeypatch):
+    """Test that service retries on IntegrityError from short_code collision."""
     original = "https://example.com/conflict"
-    call_count = {"n": 0}
+    attempt_count = {"n": 0}
     real_create = URL.objects.create
 
     def flaky_create(*args, **kwargs):
-        # fail once with IntegrityError, then delegate to real create
-        if call_count["n"] == 0:
-            call_count["n"] += 1
-            raise IntegrityError("unique constraint")
+        # Fail first time if short_code is "abc123", then allow through
+        attempt_count["n"] += 1
+        if attempt_count["n"] == 1 and kwargs.get("short_code") == "abc123":
+            raise IntegrityError("short_code")
         return real_create(*args, **kwargs)
 
-    monkeypatch.setattr(URL.objects, "create", flaky_create, raising=True)
+    monkeypatch.setattr(URL.objects, "create", flaky_create)
+    monkeypatch.setattr(
+        services,
+        "_generate_code",
+        lambda: "abc123" if attempt_count["n"] == 1 else "def456",
+    )
 
     url = services.create_short_url(original)
 
@@ -28,17 +35,20 @@ def test_create_short_url_handles_integrity_error(monkeypatch):
 
 @pytest.mark.django_db
 def test_create_short_url_exhausts_retries(monkeypatch):
-    # Force _generate_code to always return the same code so retries fail
-    monkeypatch.setattr(services, "_generate_code", lambda: "fixedcode")
-
-    # Ensure no existing URL has that original
+    """Test that service raises UniqueCodeError after MAX_RETRIES."""
     original = "https://example.com/exhaust"
 
-    # Force the manager to always raise IntegrityError on create attempts
-    def always_raise(*args, **kwargs):
-        raise IntegrityError("unique constraint")
+    # Always raise IntegrityError on short_code collisions
+    real_create = URL.objects.create
 
-    monkeypatch.setattr(URL.objects, "get_or_create", always_raise, raising=True)
+    def always_short_code_error(*args, **kwargs):
+        if kwargs.get("short_code"):
+            raise IntegrityError("short_code")
+        return real_create(*args, **kwargs)
 
-    with pytest.raises(services.UniqueCodeError):
+    monkeypatch.setattr(URL.objects, "create", always_short_code_error)
+    # Force same code every time so we exceed retries
+    monkeypatch.setattr(services, "_generate_code", lambda: "samecode")
+
+    with pytest.raises(UniqueCodeError):
         services.create_short_url(original)

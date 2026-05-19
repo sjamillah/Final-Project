@@ -1,6 +1,7 @@
-from django.urls import path
-from .views import URLCreateView
+from django.urls import include, path
 
 urlpatterns = [
-    path("urls/", URLCreateView.as_view(), name="url-create"),
+    path("", include("apps.api.v1.auth.urls")),
+    path("", include("apps.api.v1.links.urls")),
+    path("", include("apps.api.v1.analytics.urls")),
 ]

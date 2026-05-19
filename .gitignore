@@ -8,5 +8,5 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .vscode/
-.django-stub-gen
-.coverage
+.django-stub-gen/
+.coverage*

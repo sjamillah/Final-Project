@@ -9,7 +9,7 @@ def test_openapi_schema_includes_short_code_and_request_body(client):
 
     schema = response.json()
 
-    create_path = schema["paths"]["/api/urls/"]["post"]
+    create_path = schema["paths"]["/api/v1/urls/"]["post"]
     redirect_path = schema["paths"]["/{short_code}/"]["get"]
 
     assert create_path["requestBody"]["content"]["application/json"]["schema"]

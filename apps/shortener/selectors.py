@@ -57,20 +57,27 @@ def get_popular_urls_with_tags(threshold=100):
 
 
 def get_url_by_code_with_owner(short_code: str) -> URL | None:
-    """Single URL lookup by short_code. Resolves owner in the same query."""
-    return URL.objects.select_related("owner").filter(short_code=short_code).first()
+    """Single URL lookup by short code or custom alias. Resolves owner in the same query."""
+    return (
+        URL.objects.select_related("owner").filter(short_code=short_code).first()
+        or URL.objects.select_related("owner").filter(custom_alias=short_code).first()
+    )
 
 
 def get_url_by_code(short_code: str) -> URL | None:
-    """Single URL lookup by short_code."""
-    return URL.objects.filter(short_code=short_code).first()
-
-
-def get_urls_for_user(user):
-    """All URLs belonging to a user. Tags prefetched for safe iteration."""
+    """Single URL lookup by short code or custom alias."""
     return (
-        URL.objects.filter(owner=user).prefetch_related("tags").order_by("-created_at")
+        URL.objects.filter(short_code=short_code).first()
+        or URL.objects.filter(custom_alias=short_code).first()
     )
+
+
+def get_urls_for_user(user, tag: str | None = None):
+    """All URLs belonging to a user. Optionally filtered by tag name."""
+    qs = URL.objects.filter(owner=user).prefetch_related("tags").order_by("-created_at")
+    if tag:
+        qs = qs.filter(tags__name__iexact=tag)
+    return qs
 
 
 def resolve_redirect_url(short_code: str) -> RedirectResolution:
