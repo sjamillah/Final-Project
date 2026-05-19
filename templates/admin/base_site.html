@@ -1,0 +1,9 @@
+{% extends "admin/base.html" %}
+{% load static %}
+
+{% block title %}{{ site_title|default:"Admin" }}{% endblock %}
+
+{% block extrahead %}
+<link rel="stylesheet" type="text/css" href="{% static 'css/admin.css' %}">
+{{ block.super }}
+{% endblock %}

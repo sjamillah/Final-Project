@@ -1,13 +1,20 @@
 import secrets
 import string
+from types import SimpleNamespace
 from typing import Optional
 
+from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.db.models import F, Q
-from django.utils import timezone
 
-from apps.shortener.models import Tag, URL, Click
-from apps.shortener.exceptions import UniqueCodeError
+from apps.shortener.cache import invalidate_redirect_cache
+from apps.shortener.exceptions import (
+    AliasAlreadyTaken,
+    PremiumFeatureRequired,
+    UniqueCodeError,
+    URLLimitExceeded,
+)
+from apps.shortener.models import Click, Tag, URL
 
 ALPHABET = string.ascii_letters + string.digits
 CODE_LENGTH = 6
@@ -16,7 +23,6 @@ FREE_URL_LIMIT = 10
 
 
 def _is_premium_or_admin(user) -> bool:
-    """Check if user is premium or admin. Centralized tier check."""
     if not user:
         return False
     return getattr(user, "is_premium", False) or (
@@ -29,41 +35,35 @@ def _generate_code() -> str:
 
 
 def check_url_limit(user) -> None:
-    """
-    Raises ValueError if a free user has reached their active URL limit.
-    Premium and admin users are exempt.
-    """
+    """Raises URLLimitExceeded when a free user has reached their active URL cap."""
     if _is_premium_or_admin(user):
         return
 
-    if user:
-        active_count = URL.objects.filter(owner=user, is_active=True).count()
-    else:
-        active_count = URL.objects.filter(owner__isnull=True, is_active=True).count()
+    active_count = (
+        URL.objects.filter(owner=user, is_active=True).count()
+        if user
+        else URL.objects.filter(owner__isnull=True, is_active=True).count()
+    )
 
     if active_count >= FREE_URL_LIMIT:
-        raise ValueError(
+        raise URLLimitExceeded(
             f"Free users can only have {FREE_URL_LIMIT} active URLs. "
             "Upgrade to Premium for unlimited URLs."
         )
 
 
 def check_custom_alias_permission(user, custom_alias: str | None) -> None:
-    """
-    Raises ValueError if a free or anonymous user attempts to use a custom alias.
-    """
+    """Raises PremiumFeatureRequired when a free user attempts to use a custom alias."""
     if not custom_alias:
         return
     if not _is_premium_or_admin(user):
-        raise ValueError(
+        raise PremiumFeatureRequired(
             "Custom aliases are a Premium feature. Upgrade to use vanity URLs."
         )
 
 
 def resolve_short_code(custom_alias: str | None) -> str:
-    """
-    Returns custom_alias if provided, otherwise generates a unique short code.
-    """
+    """Returns custom_alias if provided, otherwise generates a collision-free short code."""
     if custom_alias:
         return custom_alias
 
@@ -77,16 +77,16 @@ def resolve_short_code(custom_alias: str | None) -> str:
     )
 
 
+def get_url_by_code(code: str) -> URL | None:
+    """Look up an active URL by short code or custom alias. Returns None for inactive URLs."""
+    return (
+        URL.objects.filter(short_code=code, is_active=True).first()
+        or URL.objects.filter(custom_alias=code, is_active=True).first()
+    )
+
+
 def get_or_create_tags(tag_names: list[str]) -> list[Tag]:
-    """
-    Fetches or creates Tag objects for the given list of names.
-    Returns a list of Tag instances.
-    """
-    tags = []
-    for name in tag_names:
-        tag, _ = Tag.objects.get_or_create(name=name.strip())
-        tags.append(tag)
-    return tags
+    return [Tag.objects.get_or_create(name=name.strip())[0] for name in tag_names]
 
 
 def create_short_url(
@@ -99,20 +99,15 @@ def create_short_url(
     tag_names: Optional[list[str]] = None,
 ) -> URL:
     """
-    Core service for creating a shortened URL.
-    Enforces tier limits and custom alias permissions.
-
-    This function is idempotent for duplicate `original_url` submissions: if a
-    matching active URL already exists (either owned by the same user or an
-    anonymous URL), the existing instance is returned.
+    Create a shortened URL, enforcing tier limits and alias permissions.
+    Idempotent: returns the existing URL if the same original_url already exists
+    for the same owner.
     """
-    # Support both `owner=` (tests) and `user=` (older callers).
     user = owner if owner is not None else user
 
     check_url_limit(user)
     check_custom_alias_permission(user, custom_alias)
 
-    # If an active URL for this original URL already exists, return it.
     existing = (
         URL.objects.filter(original_url=original_url)
         .filter(Q(owner=user) | Q(owner__isnull=True))
@@ -125,7 +120,7 @@ def create_short_url(
         URL.objects.filter(custom_alias=custom_alias).exists()
         or URL.objects.filter(short_code=custom_alias).exists()
     ):
-        raise ValueError("This custom alias is already taken.")
+        raise AliasAlreadyTaken("This custom alias is already taken.")
 
     short_code = resolve_short_code(custom_alias)
 
@@ -141,12 +136,10 @@ def create_short_url(
                     owner=user,
                 )
             break
-        except IntegrityError as e:
-            # If short_code collided, try a new code and retry.
-            if "short_code" in str(e):
+        except IntegrityError as exc:
+            if "short_code" in str(exc):
                 short_code = _generate_code()
                 continue
-            # On original-url owner unique constraint, try to fetch existing.
             existing = (
                 URL.objects.filter(original_url=original_url)
                 .filter(Q(owner=user) | Q(owner__isnull=True))
@@ -159,40 +152,23 @@ def create_short_url(
         raise UniqueCodeError("Failed to create URL after multiple retries.")
 
     if tag_names:
-        tags = get_or_create_tags(tag_names)
-        url.tags.set(tags)
-
-    return url
-
-
-def get_url_by_code(short_code: str) -> URL | None:
-    """
-    Looks up a URL by short_code or custom_alias.
-    Returns None if not found or inactive.
-    """
-    url = (
-        URL.objects.filter(short_code=short_code, is_active=True).first()
-    ) or URL.objects.filter(custom_alias=short_code, is_active=True).first()
-
-    if url and url.expires_at and url.expires_at < timezone.now():
-        return None
+        url.tags.set(get_or_create_tags(tag_names))
 
     return url
 
 
 def update_url(url: URL, validated_data: dict, user) -> URL:
-    """
-    Updates a URL instance. Enforces custom alias permissions on update.
-    """
+    """Update a URL. Enforces alias permissions and invalidates the redirect cache."""
     custom_alias = validated_data.get("custom_alias")
     check_custom_alias_permission(user, custom_alias)
 
     if custom_alias:
-        alias_qs = URL.objects.filter(custom_alias=custom_alias) | URL.objects.filter(
-            short_code=custom_alias
-        )
-        if alias_qs.exclude(pk=url.pk).exists():
-            raise ValueError("This custom alias is already taken.")
+        conflict = (
+            URL.objects.filter(custom_alias=custom_alias)
+            | URL.objects.filter(short_code=custom_alias)
+        ).exclude(pk=url.pk)
+        if conflict.exists():
+            raise AliasAlreadyTaken("This custom alias is already taken.")
 
     tag_names = validated_data.pop("tags", None)
 
@@ -200,33 +176,25 @@ def update_url(url: URL, validated_data: dict, user) -> URL:
         setattr(url, field, value)
     url.save()
 
+    invalidate_redirect_cache(url.short_code, url.custom_alias)
+
     if tag_names is not None:
-        tags = get_or_create_tags(tag_names)
-        url.tags.set(tags)
+        url.tags.set(get_or_create_tags(tag_names))
 
     return url
 
 
 def deactivate_url(url: URL) -> URL:
-    """
-    Soft deletes a URL by setting is_active=False.
-    """
+    """Soft-delete a URL and evict it from the redirect cache."""
     url.is_active = False
     url.save(update_fields=["is_active"])
+    invalidate_redirect_cache(url.short_code, url.custom_alias)
     return url
 
 
-def build_click_metadata(meta: dict) -> dict:
-    """Extract minimal click metadata from WSGI `request.META` mapping.
-
-    Returns a simple object with attribute access (for tests and callers).
-    Honors the `TRUST_PROXY_HEADERS` setting.
-    """
-    from types import SimpleNamespace
-    from django.conf import settings
-
+def build_click_metadata(meta: dict) -> SimpleNamespace:
+    """Extract click metadata from WSGI request.META. Honors TRUST_PROXY_HEADERS."""
     xff = meta.get("HTTP_X_FORWARDED_FOR")
-    ip = None
     if getattr(settings, "TRUST_PROXY_HEADERS", False) and xff:
         ip = xff.split(",")[0].strip()
     else:
@@ -241,62 +209,20 @@ def build_click_metadata(meta: dict) -> dict:
 
 def create_click_for_url(
     url: URL,
-    metadata: dict | None = None,
     ip_address: str | None = None,
-    meta: dict | None = None,
+    user_agent: str | None = None,
+    referrer: str | None = None,
 ) -> Click:
-    """Create a Click row and increment the parent URL's click_count.
-
-    Backwards-compatible: callers can pass `ip_address=` or a `meta`/`metadata` dict
-    (typically `request.META`). If none provided, creates a Click with
-    null metadata fields.
     """
-    # Prefer explicit ip_address, then meta/metadata dict, then metadata arg.
-    data_obj = None
-    if ip_address is not None:
-        # build a small object with attribute access
-        from types import SimpleNamespace
-
-        data_obj = SimpleNamespace(
-            ip_address=ip_address, user_agent=None, referrer=None
+    Atomically create a Click row and increment the parent URL's click_count.
+    Both writes succeed or both are rolled back (ACID).
+    """
+    with transaction.atomic():
+        click = Click.objects.create(
+            url=url,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            referrer=referrer,
         )
-    else:
-        if metadata:
-            if isinstance(metadata, dict):
-                data_obj = build_click_metadata(metadata)
-            elif hasattr(metadata, "ip_address"):
-                data_obj = metadata
-            elif hasattr(metadata, "get"):
-                # Mapping-like
-                data_obj = build_click_metadata(metadata)
-            else:
-                # Fallback: attempt to coerce to mapping
-                try:
-                    data_obj = build_click_metadata(dict(metadata))
-                except Exception:
-                    data_obj = None
-        elif meta:
-            if isinstance(meta, dict):
-                data_obj = build_click_metadata(meta)
-            elif hasattr(meta, "ip_address"):
-                data_obj = meta
-            else:
-                try:
-                    data_obj = build_click_metadata(dict(meta))
-                except Exception:
-                    data_obj = None
-
-    if data_obj is None:
-        # empty object
-        from types import SimpleNamespace
-
-        data_obj = SimpleNamespace(ip_address=None, user_agent=None, referrer=None)
-
-    click = Click.objects.create(
-        url=url,
-        ip_address=data_obj.ip_address,
-        user_agent=data_obj.user_agent,
-        referrer=data_obj.referrer,
-    )
-    URL.objects.filter(pk=url.pk).update(click_count=F("click_count") + 1)
+        URL.objects.filter(pk=url.pk).update(click_count=F("click_count") + 1)
     return click

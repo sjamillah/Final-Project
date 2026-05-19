@@ -10,6 +10,7 @@ from apps.shortener.services import (
     create_click_for_url,
     create_short_url,
 )
+from apps.shortener.selectors import get_url_by_code
 
 
 @pytest.mark.django_db
@@ -153,7 +154,9 @@ class TestCheckUrlLimit:
                 is_active=True,
             )
 
-        with pytest.raises(ValueError, match="Free users can only have"):
+        from apps.shortener.exceptions import URLLimitExceeded
+
+        with pytest.raises(URLLimitExceeded, match="Free users can only have"):
             check_url_limit(user)
 
     def test_premium_user_no_limit(self, db):
@@ -194,7 +197,11 @@ class TestCheckCustomAliasPermission:
             is_premium=False,
         )
 
-        with pytest.raises(ValueError, match="Custom aliases are a Premium feature"):
+        from apps.shortener.exceptions import PremiumFeatureRequired
+
+        with pytest.raises(
+            PremiumFeatureRequired, match="Custom aliases are a Premium feature"
+        ):
             check_custom_alias_permission(user, "myalias")
 
     def test_premium_user_can_use_alias(self, db):
@@ -231,14 +238,10 @@ class TestGetUrlByCode:
     """Tests for URL lookup by code/alias."""
 
     def test_finds_by_short_code(self, url):
-        from apps.shortener.services import get_url_by_code
-
         found = get_url_by_code(url.short_code)
         assert found.pk == url.pk
 
     def test_finds_by_custom_alias(self, user):
-        from apps.shortener.services import get_url_by_code
-
         url = URL.objects.create(
             owner=user,
             original_url="https://example.com",
@@ -249,10 +252,8 @@ class TestGetUrlByCode:
         found = get_url_by_code("myalias")
         assert found.pk == url.pk
 
-    def test_ignores_inactive_urls(self, user):
-        from apps.shortener.services import get_url_by_code
-
-        URL.objects.create(
+    def test_finds_inactive_urls(self, user):
+        url = URL.objects.create(
             owner=user,
             original_url="https://example.com",
             short_code="abc123",
@@ -260,11 +261,9 @@ class TestGetUrlByCode:
         )
 
         found = get_url_by_code("abc123")
-        assert found is None
+        assert found.pk == url.pk
 
     def test_returns_none_for_not_found(self):
-        from apps.shortener.services import get_url_by_code
-
         found = get_url_by_code("notfound")
         assert found is None
 

@@ -1,6 +1,19 @@
 from django.contrib import admin
-from django.contrib.auth.admin import UserAdmin
+from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 
 from .models import User
 
-admin.site.register(User, UserAdmin)
+
+@admin.register(User)
+class UserAdmin(BaseUserAdmin):
+    list_display = ("username", "email", "tier", "is_premium", "is_staff", "is_active")
+    list_filter = ("tier", "is_premium", "is_staff", "is_active")
+    search_fields = ("username", "email")
+    ordering = ("username",)
+
+    fieldsets = BaseUserAdmin.fieldsets + (
+        ("Tier & Access", {"fields": ("tier", "is_premium")}),
+    )
+    add_fieldsets = BaseUserAdmin.add_fieldsets + (
+        ("Tier & Access", {"fields": ("tier", "is_premium")}),
+    )

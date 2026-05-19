@@ -21,3 +21,16 @@ class User(AbstractUser):
 
     def __str__(self):
         return self.username
+
+    def save(self, *args, **kwargs):
+        """Auto-sync tier and staff access from the current user state."""
+        if self.is_staff or self.is_superuser or self.tier == self.Tier.ADMIN:
+            self.tier = self.Tier.ADMIN
+            self.is_staff = True
+        elif self.is_premium:
+            self.tier = self.Tier.PREMIUM
+            self.is_staff = False
+        else:
+            self.tier = self.Tier.FREE
+            self.is_staff = False
+        super().save(*args, **kwargs)
