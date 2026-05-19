@@ -97,7 +97,6 @@ class TestUserServices:
             username="testuser",
             email="test@example.com",
             password="Pass123!",
-            is_premium=True,
             tier=User.Tier.PREMIUM,
         )
 
@@ -117,4 +116,4 @@ class TestUserServices:
         updated = update_user_tier(user, User.Tier.ADMIN)
 
         assert updated.tier == User.Tier.ADMIN
-        assert updated.is_premium is True
+        assert updated.is_premium is False

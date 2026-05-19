@@ -3,11 +3,18 @@ from django.urls import include, path
 from rest_framework.permissions import AllowAny
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
+from apps.api.v1.health.views import HealthView
 from apps.api.v1.links.views import URLRedirectView
 
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/v1/", include("apps.api.v1.urls")),
+    path("", include("apps.preview.urls")),
+    path(
+        "health/",
+        HealthView.as_view(permission_classes=[AllowAny]),
+        name="health",
+    ),
     # Make schema and docs publicly viewable so the Swagger UI displays
     # request/response schemas and example bodies without requiring auth.
     path(

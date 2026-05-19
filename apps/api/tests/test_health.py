@@ -10,6 +10,11 @@ def client():
 @pytest.mark.django_db
 class TestHealthEndpoint:
 
+    def test_root_health_endpoint_is_available(self, client):
+        response = client.get("/health/")
+        assert response.status_code in {200, 503}
+        assert "status" in response.data
+
     def test_returns_status_field(self, client):
         response = client.get("/api/v1/health/")
         assert "status" in response.data

@@ -8,6 +8,6 @@ class LoginRateThrottle(AnonRateThrottle):
 
 
 class URLCreateRateThrottle(UserRateThrottle):
-    """Limits URL creation to 30 per minute per authenticated user."""
+    """Limits URL creation to 10 per minute per authenticated user."""
 
     scope = "url_create"

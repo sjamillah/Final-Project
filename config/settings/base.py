@@ -79,7 +79,7 @@ REST_FRAMEWORK = {
         "anon": "100/day",
         "user": "1000/day",
         "login": "5/minute",
-        "url_create": "30/minute",
+        "url_create": "10/minute",
     },
 }
 

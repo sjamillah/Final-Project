@@ -21,7 +21,6 @@ def premium_user(db):
         username="premiumuser",
         email="premium@example.com",
         password="testpass123",
-        is_premium=True,
         tier=User.Tier.PREMIUM,
     )
 

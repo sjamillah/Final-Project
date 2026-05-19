@@ -24,13 +24,18 @@ class User(AbstractUser):
 
     def save(self, *args, **kwargs):
         """Auto-sync tier and staff access from the current user state."""
+        # Ensure admin flags and tier remain consistent first.
         if self.is_staff or self.is_superuser or self.tier == self.Tier.ADMIN:
             self.tier = self.Tier.ADMIN
             self.is_staff = True
-        elif self.is_premium:
-            self.tier = self.Tier.PREMIUM
+        elif self.tier == self.Tier.PREMIUM:
             self.is_staff = False
         else:
             self.tier = self.Tier.FREE
             self.is_staff = False
+
+        # Keep `is_premium` in sync with `tier`. Only `Tier.PREMIUM` maps
+        # to `is_premium=True` — admins are not considered premium customers.
+        self.is_premium = self.tier == self.Tier.PREMIUM
+
         super().save(*args, **kwargs)

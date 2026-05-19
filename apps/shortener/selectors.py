@@ -60,7 +60,9 @@ def get_url_by_code_with_owner(short_code: str) -> URL | None:
     """Single URL lookup by short code or custom alias. Resolves owner in the same query."""
     return (
         URL.objects.select_related("owner").filter(short_code=short_code).first()
-        or URL.objects.select_related("owner").filter(custom_alias=short_code).first()
+        or URL.objects.select_related("owner")
+        .filter(custom_alias__iexact=short_code)
+        .first()
     )
 
 
@@ -68,7 +70,7 @@ def get_url_by_code(short_code: str) -> URL | None:
     """Single URL lookup by short code or custom alias."""
     return (
         URL.objects.filter(short_code=short_code).first()
-        or URL.objects.filter(custom_alias=short_code).first()
+        or URL.objects.filter(custom_alias__iexact=short_code).first()
     )
 
 

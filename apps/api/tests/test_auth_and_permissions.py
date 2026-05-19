@@ -28,7 +28,6 @@ def premium_user(db):
         username="premium",
         email="premium@example.com",
         password="SecurePremiumPass123",
-        is_premium=True,
         tier=User.Tier.PREMIUM,
     )
     return user
@@ -40,7 +39,6 @@ def free_user(db):
         username="freeuser",
         email="free@example.com",
         password="SecureFreePass123",
-        is_premium=False,
         tier=User.Tier.FREE,
     )
 
@@ -194,6 +192,19 @@ class TestLogin:
         )
         assert response.status_code == 400
 
+    def test_login_is_rate_limited_after_five_attempts(self, client, free_user):
+        payload = {
+            "email": free_user.email,
+            "password": "SecureFreePass123",
+        }
+
+        for _ in range(5):
+            response = client.post("/api/v1/auth/login/", payload)
+            assert response.status_code == 200
+
+        response = client.post("/api/v1/auth/login/", payload)
+        assert response.status_code == 429
+
 
 @pytest.mark.django_db
 class TestLogout:
@@ -261,13 +272,16 @@ class TestFreeTierLimits:
 
     def test_premium_user_can_exceed_10_urls(self, auth_client_premium, db):
         client, user = auth_client_premium
-        # Create 11 URLs to test no limit
+        # Exercise the service layer directly so this test checks the tier limit
+        # instead of the API throttle.
+        from apps.shortener.services import create_short_url
+
         for i in range(11):
-            response = client.post(
-                "/api/v1/urls/",
-                {"original_url": f"https://example{i}.com"},
+            create_short_url(
+                original_url=f"https://example{i}.com",
+                user=user,
             )
-            assert response.status_code == 201
+
         assert URL.objects.filter(owner=user, is_active=True).count() == 11
 
     def test_free_user_cannot_use_custom_alias(self, auth_client_free):
@@ -293,6 +307,22 @@ class TestFreeTierLimits:
         )
         assert response.status_code == 201
         assert response.data["custom_alias"] == "myalias"
+
+    def test_url_creation_is_rate_limited_after_ten_requests(self, auth_client_premium):
+        client, user = auth_client_premium
+
+        for i in range(10):
+            response = client.post(
+                "/api/v1/urls/",
+                {"original_url": f"https://throttle{i}.example.com"},
+            )
+            assert response.status_code == 201
+
+        response = client.post(
+            "/api/v1/urls/",
+            {"original_url": "https://throttle-overflow.example.com"},
+        )
+        assert response.status_code == 429
 
 
 @pytest.mark.django_db

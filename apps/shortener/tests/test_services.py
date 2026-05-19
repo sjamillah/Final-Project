@@ -143,7 +143,6 @@ class TestCheckUrlLimit:
             username="freeuser",
             email="free@test.com",
             password="Pass123!",
-            is_premium=False,
         )
         # Create 10 active URLs
         for i in range(10):
@@ -167,7 +166,7 @@ class TestCheckUrlLimit:
             username="premiumuser",
             email="premium@test.com",
             password="Pass123!",
-            is_premium=True,
+            tier=User.Tier.PREMIUM,
         )
         # Create 15 URLs (exceeds free limit)
         for i in range(15):
@@ -194,7 +193,6 @@ class TestCheckCustomAliasPermission:
             username="freeuser",
             email="free@test.com",
             password="Pass123!",
-            is_premium=False,
         )
 
         from apps.shortener.exceptions import PremiumFeatureRequired
@@ -212,7 +210,7 @@ class TestCheckCustomAliasPermission:
             username="premiumuser",
             email="premium@test.com",
             password="Pass123!",
-            is_premium=True,
+            tier=User.Tier.PREMIUM,
         )
 
         # Should not raise
@@ -226,7 +224,6 @@ class TestCheckCustomAliasPermission:
             username="freeuser",
             email="free@test.com",
             password="Pass123!",
-            is_premium=False,
         )
 
         # Should not raise for None

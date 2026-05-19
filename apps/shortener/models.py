@@ -1,6 +1,8 @@
 from django.conf import settings
 from django.db import models
 from django.utils import timezone
+from django.core.validators import RegexValidator
+from django.db.models.functions import Lower
 
 from .managers import URLManager
 
@@ -25,7 +27,18 @@ class URL(models.Model):
     )
     original_url = models.URLField(max_length=2048)
     short_code = models.CharField(max_length=10, unique=True)
-    custom_alias = models.CharField(max_length=50, null=True, blank=True, unique=True)
+    custom_alias = models.CharField(
+        max_length=50,
+        null=True,
+        blank=True,
+        unique=False,
+        validators=[
+            RegexValidator(
+                regex=r"^[A-Za-z0-9_-]+$",
+                message="Custom alias may only contain letters, numbers, hyphens and underscores",
+            )
+        ],
+    )
     title = models.CharField(max_length=255, null=True, blank=True)
     description = models.CharField(max_length=255, null=True, blank=True)
     favicon = models.CharField(max_length=2048, null=True, blank=True)
@@ -49,6 +62,12 @@ class URL(models.Model):
                 condition=models.Q(owner__isnull=True),
                 name="uniq_anon_original_url",
             ),
+            # Case-insensitive uniqueness for custom_alias (when provided).
+            models.UniqueConstraint(
+                Lower("custom_alias"),
+                name="uniq_lower_custom_alias",
+                condition=models.Q(custom_alias__isnull=False),
+            ),
         ]
         indexes = [
             models.Index(fields=["created_at"]),
@@ -63,6 +82,12 @@ class URL(models.Model):
     @property
     def is_expired(self) -> bool:
         return self.expires_at is not None and self.expires_at <= timezone.now()
+
+    def save(self, *args, **kwargs):
+        # Normalise custom_alias to a canonical form for lookup and uniqueness.
+        if self.custom_alias:
+            self.custom_alias = self.custom_alias.strip().lower()
+        super().save(*args, **kwargs)
 
 
 class Click(models.Model):

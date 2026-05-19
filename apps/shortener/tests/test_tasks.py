@@ -84,3 +84,54 @@ class TestCleanupExpiredUrlsTask:
     def test_returns_zero_when_nothing_to_clean(self, url):
         count = cleanup_expired_urls()
         assert count == 0
+
+
+@pytest.mark.django_db
+class TestFetchUrlPreviewTask:
+
+    def test_updates_url_metadata_from_preview_service(self, url, monkeypatch):
+        from apps.shortener.tasks import fetch_url_preview_task
+        from apps.shortener import preview_client
+
+        monkeypatch.setattr(
+            preview_client,
+            "fetch_preview",
+            lambda original_url: preview_client.PreviewData(
+                title="Preview Title",
+                description="Preview Description",
+                favicon="https://example.com/favicon.ico",
+            ),
+        )
+
+        fetch_url_preview_task(url.pk, url.original_url)
+        url.refresh_from_db()
+
+        assert url.title == "Preview Title"
+        assert url.description == "Preview Description"
+        assert url.favicon == "https://example.com/favicon.ico"
+
+    def test_does_not_overwrite_existing_metadata(self, url, monkeypatch):
+        from apps.shortener.tasks import fetch_url_preview_task
+        from apps.shortener import preview_client
+
+        url.title = "Kept Title"
+        url.description = "Kept Description"
+        url.favicon = "https://example.com/kept.ico"
+        url.save()
+
+        monkeypatch.setattr(
+            preview_client,
+            "fetch_preview",
+            lambda original_url: preview_client.PreviewData(
+                title="New Title",
+                description="New Description",
+                favicon="https://example.com/new.ico",
+            ),
+        )
+
+        fetch_url_preview_task(url.pk, url.original_url)
+        url.refresh_from_db()
+
+        assert url.title == "Kept Title"
+        assert url.description == "Kept Description"
+        assert url.favicon == "https://example.com/kept.ico"

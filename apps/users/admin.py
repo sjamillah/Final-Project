@@ -7,13 +7,11 @@ from .models import User
 @admin.register(User)
 class UserAdmin(BaseUserAdmin):
     list_display = ("username", "email", "tier", "is_premium", "is_staff", "is_active")
-    list_filter = ("tier", "is_premium", "is_staff", "is_active")
+    list_filter = ("tier", "is_staff", "is_active")
     search_fields = ("username", "email")
     ordering = ("username",)
 
-    fieldsets = BaseUserAdmin.fieldsets + (
-        ("Tier & Access", {"fields": ("tier", "is_premium")}),
-    )
+    fieldsets = BaseUserAdmin.fieldsets + (("Tier & Access", {"fields": ("tier",)}),)
     add_fieldsets = BaseUserAdmin.add_fieldsets + (
-        ("Tier & Access", {"fields": ("tier", "is_premium")}),
+        ("Tier & Access", {"fields": ("tier",)}),
     )

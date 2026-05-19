@@ -67,6 +67,8 @@ class LoginSerializer(serializers.Serializer):
 
 
 class UserSerializer(serializers.ModelSerializer):
+    is_premium = serializers.ReadOnlyField()
+
     class Meta:
         model = User
         fields = [
