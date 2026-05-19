@@ -19,6 +19,7 @@ INSTALLED_APPS = [
     "django.contrib.auth",
     "django.contrib.sessions",
     "django.contrib.messages",
+    "corsheaders",
     "rest_framework",
     "rest_framework_simplejwt",
     "rest_framework_simplejwt.token_blacklist",
@@ -27,6 +28,7 @@ INSTALLED_APPS = [
     "apps.users",
     "apps.shortener",
     "apps.api",
+    "apps.preview",
 ]
 
 TEMPLATES = [
@@ -47,6 +49,7 @@ TEMPLATES = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "corsheaders.middleware.CorsMiddleware",  # must sit before CommonMiddleware
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -203,3 +206,36 @@ LOGGING = {
         },
     },
 }
+
+# ---------------------------------------------------------------------------
+# CORS — allow browser frontends (React, Vue, etc.) to call the API.
+# In development CORS_ALLOW_ALL_ORIGINS=True is convenient; in production
+# set CORS_ALLOWED_ORIGINS to the exact frontend origin(s).
+# ---------------------------------------------------------------------------
+CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=[])
+CORS_ALLOW_ALL_ORIGINS = env.bool("CORS_ALLOW_ALL_ORIGINS", default=False)
+CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_HEADERS = [
+    "accept",
+    "accept-encoding",
+    "authorization",
+    "content-type",
+    "dnt",
+    "origin",
+    "user-agent",
+    "x-csrftoken",
+    "x-requested-with",
+]
+
+# ---------------------------------------------------------------------------
+# Preview Service (Module 9)
+# ---------------------------------------------------------------------------
+PREVIEW_SERVICE_URL = env("PREVIEW_SERVICE_URL", default="http://preview_service:8001")
+
+# Circuit breaker — tracked in Redis, shared across all Celery workers.
+CIRCUIT_BREAKER_FAILURE_THRESHOLD = env.int(
+    "CIRCUIT_BREAKER_FAILURE_THRESHOLD", default=5
+)
+CIRCUIT_BREAKER_RECOVERY_TIMEOUT = env.int(
+    "CIRCUIT_BREAKER_RECOVERY_TIMEOUT", default=300
+)

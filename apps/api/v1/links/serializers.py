@@ -70,6 +70,8 @@ class URLResponseSerializer(serializers.ModelSerializer):
             "custom_alias",
             "short_url",
             "title",
+            "description",
+            "favicon",
             "click_count",
             "is_active",
             "expires_at",
