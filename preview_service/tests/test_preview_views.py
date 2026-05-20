@@ -8,6 +8,7 @@ def client():
 
 
 @pytest.mark.django_db
+@pytest.mark.urls("preview_service.urls")
 class TestPreviewEndpoint:
 
     def test_preview_endpoint_returns_metadata(self, client, monkeypatch):

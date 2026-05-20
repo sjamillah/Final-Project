@@ -35,20 +35,18 @@ services:
     env_file:
       - .env
     environment:
-      PYTHONPATH: /app/preview_service
-      DJANGO_SETTINGS_MODULE: config.settings
+      DJANGO_SETTINGS_MODULE: preview_service.settings
     volumes:
       - .:/app
     ports:
       - "8001:8001"
-    working_dir: /app/preview_service
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import http.client; c = http.client.HTTPConnection('localhost', 8001, timeout=5); c.request('GET', '/health/', headers={'Connection': 'close'}); r = c.getresponse(); r.read(); exit(0 if r.status == 200 else 1)\""]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 20s
-    command: gunicorn config.wsgi:application --bind 0.0.0.0:8001 --workers 2 --timeout 60 --keep-alive 0
+    command: gunicorn preview_service.wsgi:application --bind 0.0.0.0:8001 --workers 2 --timeout 60 --keep-alive 0
 
   web:
     build:

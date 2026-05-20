@@ -28,7 +28,6 @@ INSTALLED_APPS = [
     "apps.users",
     "apps.shortener",
     "apps.api",
-    "apps.preview",
 ]
 
 TEMPLATES = [
