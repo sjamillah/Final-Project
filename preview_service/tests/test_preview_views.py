@@ -11,7 +11,7 @@ def client():
 class TestPreviewEndpoint:
 
     def test_preview_endpoint_returns_metadata(self, client, monkeypatch):
-        from apps.preview import views
+        from preview_service import views
 
         monkeypatch.setattr(
             views,

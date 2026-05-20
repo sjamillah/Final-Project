@@ -81,7 +81,7 @@ class URLResponseSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = fields
 
-    def get_short_url(self, obj):
+    def get_short_url(self, obj) -> str:
         request = self.context.get("request")
         code = obj.custom_alias or obj.short_code
         if request:

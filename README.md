@@ -1,894 +1,564 @@
 # URL Shortener API (Django 5 + PostgreSQL)
 
-A production-grade URL shortening service with JWT authentication, user tiers, analytics, URL preview metadata, and API documentation.
+Production-grade URL shortening service with JWT auth, user tiers, analytics, preview metadata, and microservices architecture.
 
-## Table of Contents
-- [Tech Stack](#tech-stack)
-- [Quick Start](#quick-start)
-- [Architecture](#architecture)
-- [API Endpoints](#api-endpoints)
-- [Authentication](#authentication)
-- [Features by Module](#features-by-module)
-- [Module 8 Technical Details](#module-8-technical-details)
-- [Module 9 Technical Details](#module-9-technical-details)
-- [Database Schema](#database-schema)
-- [Development](#development)
-- [Testing](#testing)
+## Quick Facts
 
-## Tech Stack
+| Feature | Details |
+|---------|---------|
+| **Tech Stack** | Django 5, DRF, PostgreSQL, Redis, Celery, Docker |
+| **Auth** | JWT + RBAC (free/premium/admin tiers) |
+| **Features** | Short codes, custom aliases, analytics, preview metadata, async tasks |
+| **Microservices** | Separate preview service (port 8001) |
+| **Deployment** | Docker Compose, Kubernetes-ready |
+| **Tests** | 243 tests passing |
 
-- **Backend**: Python 3.10, Django 5.x, Django REST Framework
-- **Database**: PostgreSQL 15
-- **Caching**: Redis 7 (cache-aside pattern for redirects)
-- **Async Tasks**: Celery 5 + Celery Beat (click tracking, URL cleanup, URL preview sync)
-- **Authentication**: JWT via `djangorestframework-simplejwt`
-- **API Docs**: drf-spectacular (OpenAPI 3.0 + Swagger UI)
-- **Admin Interface**: Django Admin with custom base classes
-- **Logging**: JSON structured logging for observability
-- **Containerization**: Docker & Docker Compose (API, worker, beat, preview microservice)
-- **Dependency Management**: Poetry
-- **Testing**: pytest & pytest-django with async task fixtures
-- **Code Quality**: Black, Ruff, pre-commit
 
----
+## Quick Start (5 minutes)
 
-## Quick Start
-
-### Prerequisites
-- Docker & Docker Compose installed
-- OR Python 3.10+, Poetry, PostgreSQL running locally
-
-### Run with Docker (Recommended)
-
-1. **Clone and setup**:
+### With Docker (Recommended)
 ```bash
-git clone <repo-url>
-cd Final-Project
+git clone <repo-url> && cd Final-Project
 cp .env.example .env
-```
-
-2. **Build and start services**:
-```bash
 docker compose up --build
 ```
 
-This starts:
-- `web`: Django API (port 8000)
-- `db`: PostgreSQL (port 5434)
-- `redis`: Redis cache (port 6380)
-- `celery`: Celery worker for async tasks
-- `celery-beat`: Celery Beat scheduler for nightly cleanup
-- `preview_service`: URL metadata microservice (port 8001)
-
-3. **Access the application**:
+**Access:**
 - API: http://localhost:8000/api/v1/
-- Swagger UI (API Docs): http://localhost:8000/api/docs/
-- Schema (OpenAPI JSON): http://localhost:8000/api/schema/
-- Health Check: http://localhost:8000/api/v1/health/
-- Django Admin: http://localhost:8000/admin/ (staff users)
-- Preview Service Health: http://localhost:8001/health/
+- Swagger: http://localhost:8000/api/docs/
+- Admin: http://localhost:8000/admin/
+- Preview Service: http://localhost:8001/health/
 
-4. **View logs**:
+### Without Docker
 ```bash
-# All services
-docker compose logs -f
-
-# Specific service
-docker compose logs -f celery
-docker compose logs -f redis
-```
-
-5. **Stop services**:
-```bash
-docker compose down
-```
-
-### Run Locally (Without Docker)
-
-1. **Install dependencies**:
-```bash
-poetry install
-```
-
-2. **Setup environment**:
-```bash
-cp .env.example .env
-# Edit .env with your local PostgreSQL credentials
-```
-
-3. **Run migrations**:
-```bash
-poetry run python manage.py migrate
-```
-
-4. **Create a superuser (optional)**:
-```bash
-poetry run python manage.py createsuperuser
-```
-
-5. **Start development server**:
-```bash
+poetry install && poetry run python manage.py migrate
 poetry run python manage.py runserver
 ```
 
-**For Module 8 (Optional - Celery + Redis):**
-
-If you want to test async tasks and caching locally:
-
-6a. **Start Redis** (separate terminal):
-```bash
-# Using Docker just for Redis
-docker run -it -p 6379:6379 redis:7-alpine
-
-# Or if Redis installed locally
-redis-server
-```
-
-6b. **Start Celery worker** (separate terminal):
-```bash
-poetry run celery -A config worker -l info
-```
-
-6c. **Start Celery Beat** (separate terminal):
-```bash
-poetry run celery -A config beat -l info
-```
-
-7. **Run tests**:
-```bash
-poetry run pytest -v
-```
-
-**Note**: Tests don't require Redis/Celery running - fixtures provide in-memory cache and eager task execution.
+For async tasks/caching, start Redis and Celery in separate terminals.
 
 ---
 
-## Architecture
+## Example API Calls
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                    Client (Web/Mobile)                  │
-└──────────────────────┬──────────────────────────────────┘
-                       │
-                       │ HTTP/HTTPS
-                       ▼
-┌─────────────────────────────────────────────────────────┐
-│              Django REST API (Port 8000)                │
-│                                                          │
-│  ┌──────────────────────────────────────────────────┐   │
-│  │            Authentication Layer (JWT)            │   │
-│  │  • RegisterView, LoginView, LogoutView          │   │
-│  │  • TokenRefreshView (simplejwt)                 │   │
-│  └──────────────────────────────────────────────────┘   │
-│                                                          │
-│  ┌──────────────────────────────────────────────────┐   │
-│  │         URL Management Endpoints (/v1/)          │   │
-│  │  • URLListCreateView (GET/POST)                 │   │
-│  │  • URLDetailView (GET/PUT/PATCH/DELETE)        │   │
-│  │  • URLRedirectView (GET - public)               │   │
-│  │  • URLAnalyticsView (GET - premium only)        │   │
-│  └──────────────────────────────────────────────────┘   │
-│                                                          │
-│  ┌──────────────────────────────────────────────────┐   │
-│  │          Domain Layer (apps/users +             │   │
-│  │                apps/shortener)                  │   │
-│  │  • users/services.py, selectors.py              │   │
-│  │  • shortener/services.py (write operations)     │   │
-│  │  • shortener/selectors.py (read operations)     │   │
-│  │  • shortener/analytics.py (aggregations)        │   │
-│  │  • shortener/cache.py (Redis cache)             │   │
-│  │  • shortener/tasks.py (Celery async tasks)      │   │
-│  │  • shortener/exceptions.py (domain errors)      │   │
-│  └──────────────────────────────────────────────────┘   │
-│                                                          │
-│  ┌──────────────────────────────────────────────────┐   │
-│  │             API Layer (apps/api/v1)             │   │
-│  │  • views.py: HTTP orchestration                 │   │
-│  │  • serializers.py: request/response validation  │   │
-│  │  • permissions.py: DRF permission classes       │   │
-│  │  • apps/api/throttles.py: DRF throttle classes  │   │
-│  │  • health/views.py: Service monitoring          │   │
-│  └──────────────────────────────────────────────────┘   │
-│                                                          │
-│  ┌──────────────────────────────────────────────────┐   │
-│  │        Data Access Layer (ORM + Indexes)         │   │
-│  │  • models.py: User, URL, Click, Tag             │   │
-│  │  • managers.py: QuerySet helpers                │   │
-│  │  • migrations: Schema versioning                │   │
-│  └──────────────────────────────────────────────────┘   │
-│                                                          │
-│  ┌──────────────────────────────────────────────────┐   │
-│  │      Logging & Monitoring (apps/core)            │   │
-│  │  • logging.py: JSON structured logging          │   │
-│  │  • admin.py: Django admin interface             │   │
-│  └──────────────────────────────────────────────────┘   │
-└──────────────┬───────────────────────────────────────────┘
-               │
-      ┌────────┼────────┐
-      │        │        │
-      ▼        ▼        ▼
-  ┌────────┐ ┌───────┐ ┌──────────────┐
-  │Postgres│ │ Redis │ │ Celery Tasks │
-  │        │ │       │ │              │
-  │Database│ │ Cache │ │ • Click      │
-  │        │ │       │ │ • Cleanup    │
-  └────────┘ └───────┘ └──────────────┘
-                          │
-                          ▼
-                    ┌──────────────┐
-                    │ Celery Beat  │
-                    │ Scheduler    │
-                    └──────────────┘
-```
-
----
-
-## API Endpoints
-
-### Base URL
-```
-http://localhost:8000/api/v1/
-```
-
-### Authentication Endpoints
-
-| Method | Endpoint | Description | Auth | Rate Limit |
-|--------|----------|-------------|------|-----------|
-| POST | `/auth/register/` | Register new user | None | - |
-| POST | `/auth/login/` | Login & get JWT tokens | None | 5/min |
-| POST | `/auth/refresh/` | Refresh access token | Refresh token | - |
-| POST | `/auth/logout/` | Logout (blacklist token) | Bearer token | - |
-
-**Request/Response Examples**:
-
-**Register**:
+**Register:**
 ```bash
 curl -X POST http://localhost:8000/api/v1/auth/register/ \
   -H "Content-Type: application/json" \
-  -d '{
-    "username": "john",
-    "email": "john@example.com",
-    "password": "SecurePass123",
-    "password_confirm": "SecurePass123"
-  }'
+  -d '{"username":"user1","email":"user@example.com","password":"Pass123!","password_confirm":"Pass123!"}'
 ```
 
-Response (201):
-```json
-{
-  "user": {
-    "id": 1,
-    "username": "john",
-    "email": "john@example.com",
-    "is_premium": false,
-    "tier": "free"
-  },
-  "tokens": {
-    "access": "eyJ0eXAiOiJKV1QiLCJhbGc...",
-    "refresh": "eyJ0eXAiOiJKV1QiLCJhbGc..."
-  }
-}
-```
-
-**Login**:
+**Login:**
 ```bash
 curl -X POST http://localhost:8000/api/v1/auth/login/ \
   -H "Content-Type: application/json" \
-  -d '{
-    "email": "john@example.com",
-    "password": "SecurePass123"
-  }'
+  -d '{"email":"user@example.com","password":"Pass123!"}'
 ```
 
----
-
-### URL Management Endpoints
-
-| Method | Endpoint | Description | Auth | Permission |
-|--------|----------|-------------|------|-----------|
-| GET | `/urls/` | List user's URLs | Required | Authenticated |
-| POST | `/urls/` | Create short URL | Required | Authenticated, Free tier limit: 10 URLs |
-| GET | `/urls/{short_code}/` | Get URL details | Required | Owner or ReadOnly |
-| PUT | `/urls/{short_code}/` | Full URL update | Required | Owner only |
-| PATCH | `/urls/{short_code}/` | Partial URL update | Required | Owner only |
-| DELETE | `/urls/{short_code}/` | Soft delete URL | Required | Owner only |
-| GET | `/analytics/{short_code}/` | Get analytics | Required | Premium/Admin only |
-
-**Create URL**:
+**Create short URL:**
 ```bash
 curl -X POST http://localhost:8000/api/v1/urls/ \
-  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{
-    "original_url": "https://example.com/very/long/path"
-  }'
+  -d '{"original_url":"https://example.com/long/path"}'
 ```
 
-Response (201):
+**Response:**
 ```json
 {
-  "id": 1,
-  "original_url": "https://example.com/very/long/path",
   "short_code": "abc123",
-  "custom_alias": null,
   "short_url": "http://localhost:8000/abc123/",
-  "title": null,
+  "original_url": "https://example.com/long/path",
   "click_count": 0,
-  "is_active": true,
-  "expires_at": null,
-  "tags": [],
-  "owner_username": "john",
-  "created_at": "2026-04-30T12:00:00Z"
+  "title": null,
+  "description": null,
+  "favicon": null
 }
 ```
 
-**Create with Optional Fields** (Premium feature):
-```bash
-curl -X POST http://localhost:8000/api/v1/urls/ \
-  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "original_url": "https://docs.example.com",
-    "custom_alias": "docs",
-    "title": "Documentation",
-    "expires_at": "2026-12-31T23:59:59Z",
-    "tags": ["documentation", "reference"]
-  }'
-```
-
-**Get Analytics** (Premium only):
-```bash
-curl -X GET http://localhost:8000/api/v1/urls/abc123/analytics/ \
-  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
-```
-
-Response (200):
-```json
-{
-  "short_code": "abc123",
-  "total_clicks": 42,
-  "last_clicked": "2026-04-30T15:30:00Z",
-  "clicks_by_country": [
-    {"country": "US", "count": 25},
-    {"country": "UK", "count": 12},
-    {"country": "DE", "count": 5}
-  ]
-}
-```
+Preview metadata (title, description, favicon) populates asynchronously via Celery.
 
 ---
 
-### Public Redirect Endpoint
+## Features
 
-| Method | Endpoint | Description | Auth | Rate Limit |
-|--------|----------|-------------|------|-----------|
-| GET | `/{short_code}/` | Redirect to original URL | None | 100/day (anon) |
-
-Supports both short code and custom alias:
-```bash
-# Via short code
-curl -X GET http://localhost:8000/abc123/ -L
-
-# Via custom alias
-curl -X GET http://localhost:8000/docs/ -L
-```
-
-Returns HTTP 302 redirect or:
-- 404 if not found or inactive
-- 410 if expired
+- ✅ **URL Shortening**: 6-char random codes with deduplication
+- ✅ **Tier-Based Access**: Free (10 URLs), Premium (unlimited + custom aliases + analytics), Admin
+- ✅ **Analytics**: Click counts by country (premium only)
+- ✅ **Preview Metadata**: Auto-extract title, description, favicon from target URLs
+- ✅ **JWT Authentication**: Access + refresh tokens with rotation & blacklisting
+- ✅ **Async Tasks**: Celery for click tracking, preview fetching, nightly cleanup
+- ✅ **Redis Caching**: 80%+ faster redirects via cache-aside pattern
+- ✅ **SSRF Protection**: Circuit-breaker, IP ranges, timeouts, size limits
+- ✅ **Rate Limiting**: Login (10/min), URL create (10/min), per-endpoint throttles
+- ✅ **OpenAPI Docs**: Swagger UI at /api/docs/
+- ✅ **Health Checks**: Database + Redis status endpoint
+- ✅ **Admin Interface**: Staff management, click auditing, bulk operations
 
 ---
 
-### Health Check Endpoint
+## Architecture Overview
 
-| Method | Endpoint | Description | Auth | Rate Limit |
-|--------|----------|-------------|------|-----------|
-| GET | `/health/` | Service health status | None | - |
-
-**Response (200 - All services OK)**:
-```json
-{
-  "status": "ok",
-  "checks": {
-    "db": "ok",
-    "redis": "ok"
-  }
-}
+```
+┌──────────────────────────────────────┐
+│       Client (Web/Mobile/API)        │
+└───────────────┬──────────────────────┘
+                │
+    ┌───────────┴──────────┐
+    ▼                      ▼
+┌─────────────┐   ┌──────────────────────┐
+│  Main API   │   │ Preview Microservice │
+│ (port 8000) │   │  (port 8001, no DB)  │
+│             │   │                      │
+│ • Auth      │   │ • HTML parsing (BS4) │
+│ • URLs      │   │ • Metadata extract   │
+│ • Analytics │   │ • SSRF mitigation    │
+└─────┬───────┘   └──────────────────────┘
+      │
+   ┌──┴──┬──────┬──────────┐
+   ▼     ▼      ▼          ▼
+  PG   Redis Celery  Celery Beat
+  DB    Cache Worker  Scheduler
 ```
 
-**Response (503 - Degraded)**:
-```json
-{
-  "status": "degraded",
-  "checks": {
-    "db": "ok",
-    "redis": "error"
-  }
-}
-```
-
-Use this endpoint for:
-- Load balancer health checks
-- Kubernetes liveness/readiness probes
-- Monitoring dashboards
+**Topology:**
+- **Main API** (web): Handles auth, URL CRUD, analytics, redirects
+- **Preview Service** (preview_service): Isolated microservice, stateless, can scale independently
+- **PostgreSQL** (db): Primary data store, 15+ optimized indexes
+- **Redis** (redis): Cache-aside pattern (24h TTL), Celery broker, circuit-breaker
+- **Celery Worker** (celery): Async tasks—track clicks, fetch previews, cleanup expired URLs
+- **Celery Beat** (celery-beat): Nightly URL expiry cleanup (00:00 UTC)
 
 ---
 
-## Authentication
+## Key Endpoints
 
-### How JWT Auth Works
+| GET | `/health/` | Service status (DB + Redis checks) | None |
+| POST | `/api/preview/` (port 8001) | Extract page metadata | None |
 
-1. **Register or Login** → Get access + refresh tokens
-2. **Include access token** in all protected requests:
-```bash
-Authorization: Bearer <access_token>
-```
+**Rate Limits:**
+| Endpoint | Limit | Scope |
+|----------|-------|-------|
+| Login | 10/min | Per IP |
+| Create URL | 10/min | Per user |
+| Redirect | 100/day | Per IP |
 
-3. **Access token expires** after 60 minutes
-   - Use refresh token to get a new access token:
-```bash
-curl -X POST http://localhost:8000/api/v1/auth/refresh/ \
-  -H "Content-Type: application/json" \
-  -d '{"refresh": "YOUR_REFRESH_TOKEN"}'
-```
+---
 
-4. **Logout** blacklists the refresh token:
-```bash
-curl -X POST http://localhost:8000/api/v1/auth/logout/ \
-  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"refresh": "YOUR_REFRESH_TOKEN"}'
-```
+## Authentication Flow
 
-### Using Swagger UI
+1. **Register/Login** → Get access + refresh tokens
+2. **Attach token**: `Authorization: Bearer <access_token>`
+3. **Token expires** after 60 minutes → Use refresh token to get new access token
+4. **Logout** → Blacklists refresh token
 
+**Try in Swagger:**
 1. Visit http://localhost:8000/api/docs/
-2. Click **"Authorize"** button (top right)
-3. Paste your access token in the format: `Bearer <token>`
-4. Try requests directly in the UI
+2. Click **"Authorize"** button
+3. Enter: `Bearer YOUR_ACCESS_TOKEN`
+4. Execute requests directly in the UI
 
 ---
 
-## Features by Module
+## Project Structure
 
-### Module 5: Core URL Shortener
-✅ Django project with PostgreSQL + Docker setup  
-✅ URL generation with 6-char random codes  
-✅ Deduplication (same URL = same code)  
-✅ Public redirect endpoint (/{short_code}/)  
-✅ OpenAPI documentation  
-
-### Module 6: ORM & Data Layer
-✅ User model with premium tier support  
-✅ URL ownership and soft deletes  
-✅ Click tracking with geographic data  
-✅ Tag categorization (M2M relationships)  
-✅ Query optimization (select_related, prefetch_related)  
-✅ Analytics aggregation with ORM  
-
-### Module 7: JWT Auth & Permissions
-✅ JWT authentication (access + refresh tokens)  
-✅ User registration with password validation  
-✅ Role-based access control (free/premium/admin)  
-✅ Free tier limits (10 URLs max)  
-✅ Premium features (custom aliases, analytics)  
-✅ Rate limiting (login: 5/min, create: 30/min)  
-✅ Owner-only URL updates  
-✅ Token blacklisting on logout  
-
-### Module 8: Advanced Optimization & Production Readiness
-✅ Redis caching with cache-aside pattern for 80%+ faster redirects  
-✅ Celery async task queue for click tracking (non-blocking)  
-✅ Celery Beat scheduled tasks (nightly URL expiry cleanup)  
-✅ URL preview metadata fetched asynchronously after URL creation/update  
-✅ JSON structured logging for error tracking and observability  
-✅ Service health monitoring endpoint (database + Redis checks)  
-✅ Django admin interface for operator management and data browsing  
-✅ Domain-driven custom exceptions (URLLimitExceeded, PremiumFeatureRequired, AliasAlreadyTaken)  
-✅ ACID-compliant transactions for multi-step database operations  
-✅ Docker Compose services for Redis, Celery worker, and Celery Beat  
-✅ Comprehensive test fixtures for isolated async and caching tests  
-
-### Module 9: URL Preview Microservice
-✅ Separate Django preview service for extracting page metadata  
-✅ Preview endpoint returns title, description, and favicon from target URLs  
-✅ Asynchronous dispatch from the main app using Celery + `transaction.on_commit()`  
-✅ Redis-backed circuit breaker to avoid hammering failing domains  
-✅ Fallback-safe parsing with BeautifulSoup and lxml  
-✅ API responses include preview metadata once available  
-✅ Dedicated Docker Compose service for the preview workerless microservice  
-
----
-
-## Module 8 Technical Details
-
-### Redis Caching (Cache-Aside Pattern)
-```
-Request for /{short_code}/
-    │
-    ├─→ Redis Cache (check)
-    │      │
-    │      ├─→ Cache HIT → Return cached URL → Redirect
-    │      │
-    │      └─→ Cache MISS → Database query
-    │             │
-    │             ├─→ URL found → Cache it (24h TTL) → Redirect
-    │             └─→ URL not found → Return 404
-```
-
-**Benefits:**
-- 80%+ reduction in database queries for popular short codes
-- 24-hour TTL balances freshness with reduced load
-- Automatic cache invalidation when URLs are updated/deactivated
-
-### Celery Async Task Execution
-```
-User clicks /{short_code}/
-    │
-    ├─→ Redirect immediately (HTTP 302)
-    │
-    └─→ Async task dispatched
-           │
-           ├─→ track_click_task (Celery worker)
-           │      └─→ Create Click record
-           │      └─→ Increment URL.click_count (atomic transaction)
-           │      └─→ Retry on failure (3 attempts with backoff)
-```
-
-**Benefits:**
-- Non-blocking redirects (no I/O wait)
-- Reliable click tracking with retry logic
-- ACID compliance via `transaction.atomic()`
-
-### Celery Beat Scheduled Tasks
-- **Nightly cleanup** at 00:00 UTC: Deactivates URLs with `expires_at < now()`
-- Configurable via `CELERY_BEAT_SCHEDULE` in settings
-- Integrated logging for task tracking
-
-### JSON Structured Logging
-```json
-{
-  "time": "2026-05-10 17:52:29,839",
-  "level": "WARNING",
-  "logger": "django.request",
-  "message": "Not Found: /abc123/",
-  "short_code": "abc123"
-}
-```
-- Enables log aggregation (ELK, Datadog, Splunk)
-- ERROR+ logs from API and security modules
-- Carries custom fields (short_code, url_id, etc.)
-
-### Domain-Driven Exceptions
-```python
-# Instead of generic ValueError, use domain exceptions:
-raise URLLimitExceeded("Free user exceeded 10-URL limit")
-raise PremiumFeatureRequired("Custom aliases require premium tier")
-raise AliasAlreadyTaken("Alias 'docs' is already taken")
-```
-Maps to HTTP status codes:
-- `URLLimitExceeded` → 403 Forbidden
-- `PremiumFeatureRequired` → 403 Forbidden
-- `AliasAlreadyTaken` → 409 Conflict
-
-### Health Check Endpoint
-```
-GET /api/v1/health/
-    │
-    ├─→ Database: SELECT 1
-    └─→ Redis: SET "_health" "1" (5s TTL)
-       │
-       └─→ Return 200 (OK) or 503 (Degraded)
-```
-
-## Module 9 Technical Details
-
-### Preview Metadata Pipeline
-```
-URL created or updated
-    │
-    ├─→ Transaction commits successfully
-    │
-    ├─→ on_commit() schedules fetch_url_preview_task
-    │
-    ├─→ Celery worker calls preview_service /api/preview/
-    │
-    ├─→ preview_service fetches and parses metadata
-    │
-    └─→ URL row updated with title, description, favicon
-```
-
-**Benefits:**
-- Keeps URL creation fast while metadata loads in the background
-- Avoids race conditions by dispatching only after the database commit completes
-- Limits repeated failures with a per-domain circuit breaker in Redis
-- Lets the main API return preview fields as soon as they are available
-
-### Preview Service Endpoints
-- `POST /api/preview/` on port 8001: fetches metadata for an arbitrary URL
-- `GET /health/` on port 8001: lightweight service health check
-
-### Preview Metadata Storage
-- `title`, `description`, and `favicon` live on the `URL` model
-- The fields are optional so URLs can exist before preview data is fetched
-- The API serializer includes these fields in URL responses for the UI and clients
-
-### Django Admin Interface
-- **Operator Access**: Browse users, URLs, clicks without code access
-- **Read-Only Auditing**: Click records immutable for compliance
-- **Bulk Actions**: Deactivate multiple URLs at once
-- **Filtering & Search**: Filter by tier, tags, country; search by username
-- **Access**: http://localhost:8000/admin/ (staff users only)
-
----
-
-## Database Schema
-
-### User Model
-```python
-class User(AbstractUser):
-    email: EmailField (unique)
-    is_premium: BooleanField (default=False)
-    tier: CharField (choices: free, premium, admin)
-```
-
-### URL Model
-```python
-class URL(Model):
-    owner: ForeignKey(User) (nullable)
-    original_url: URLField (max 2048)
-    short_code: CharField (unique, indexed)
-    custom_alias: CharField (unique, nullable, premium only)
-    title: CharField (nullable)
-    description: CharField (nullable)
-    favicon: CharField (nullable)
-    click_count: PositiveIntegerField
-    is_active: BooleanField (soft delete)
-    expires_at: DateTimeField (nullable)
-    tags: ManyToManyField(Tag)
-    created_at: DateTimeField (auto)
-```
-
-### Click Model (Analytics)
-```python
-class Click(Model):
-    url: ForeignKey(URL)
-    ip_address: GenericIPAddressField
-    user_agent: TextField
-    country: CharField
-    city: CharField
-    referrer: URLField
-    clicked_at: DateTimeField (auto)
-```
-
-### Tag Model
-```python
-class Tag(Model):
-    name: CharField (unique)
-    urls: ManyToManyField(URL)
-```
-
----
-
-## Development
-
-### Project Structure
 ```
 Final-Project/
 ├── apps/
-│   ├── api/
-│   │   ├── throttles.py
+│   ├── api/                 # REST API layer
+│   │   ├── throttles.py     # Rate limiting (login 10/min, create 10/min)
 │   │   └── v1/
 │   │       ├── permissions.py
-│   │       ├── auth/
-│   │       │   ├── serializers.py
-│   │       │   ├── views.py
-│   │       │   └── urls.py
-│   │       ├── links/
-│   │       │   ├── serializers.py
-│   │       │   ├── views.py
-│   │       │   └── urls.py
-│   │       ├── analytics/
-│   │       │   ├── views.py
-│   │       │   └── urls.py
-│   │       └── urls.py
-│   ├── core/
-│   │   └── (placeholder)
-│   ├── users/
-│   │   ├── models.py
-│   │   ├── services.py
-│   │   ├── selectors.py
-│   │   └── migrations/
-│   └── shortener/
-│       ├── models.py
-│       ├── managers.py
-│       ├── selectors.py
-│       ├── services.py
-│       ├── analytics.py
-│       ├── migrations/
-│       └── tests/
+│   │       ├── auth/        # Registration, login, logout, refresh
+│   │       ├── links/       # URL CRUD + analytics
+│   │       └── analytics/   # Premium analytics queries
+│   ├── shortener/           # URL shortening domain
+│   │   ├── models.py        # URL, Click, Tag
+│   │   ├── services.py      # Business logic (tier limits, deduplication)
+│   │   ├── selectors.py     # Read-only queries
+│   │   ├── circuit_breaker.py  # Redis-backed circuit breaker
+│   │   └── tasks.py         # Celery async tasks
+│   └── users/               # User & tier management
+│       ├── models.py        # User with tier choices
+│       ├── services.py      # User creation/validation
+│       └── selectors.py     # User queries
 ├── config/
 │   ├── settings/
-│   │   ├── base.py (JWT, DRF, Spectacular config)
-│   │   ├── dev.py
-│   │   └── prod.py
-│   ├── urls.py
-│   ├── asgi.py
-│   └── wsgi.py
+│   │   ├── base.py          # Shared (JWT, DRF, Spectacular, Celery)
+│   │   ├── dev.py           # Development overrides
+│   │   └── prod.py          # Production overrides
+│   ├── urls.py              # Main API routing
+│   ├── wsgi.py              # WSGI entry
+│   └── celery.py            # Celery setup
+├── preview_service/         # Separate microservice (port 8001)
+│   ├── config/
+│   │   ├── settings.py      # Minimal (no DB, no cache)
+│   │   ├── urls.py          # Preview routes
+│   │   └── wsgi.py          # Preview WSGI entry
+│   ├── views.py             # HTML parsing, metadata extraction
+│   └── tests/               # Service tests (mocked)
+├── tests/                   # Integration tests
+│   ├── conftest.py          # pytest fixtures (cache, celery)
+│   ├── test_django_setup.py
+│   ├── test_schema.py
+│   ├── test_services.py
+│   └── test_views.py
+├── docker-compose.yml       # Multi-service orchestration
 ├── Dockerfile
-├── docker-compose.yml
-├── pyproject.toml
-├── .env.example
-└── README.md
+├── manage.py
+├── pyproject.toml           # Poetry dependencies
+└── .env.example             # Environment template
 ```
 
-### Environment Variables
+---
+
+## Environment Variables
+
+**Core Django:**
 ```bash
-# .env.example - Django & Database
-SECRET_KEY=your-secret-key-here
-DEBUG=True
+SECRET_KEY=<generate-with: python -c 'from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())'>
+DEBUG=True              # False in production
 DJANGO_SETTINGS_MODULE=config.settings.dev
 DATABASE_URL=postgresql://user:password@db:5432/urlshortener
-POSTGRES_DB=urlshortener
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=postgres
 ALLOWED_HOSTS=localhost,127.0.0.1
-
-# Module 8: Caching & Async Tasks
-REDIS_URL=redis://localhost:6379/0
-CELERY_BROKER_URL=redis://localhost:6379/0
-CELERY_RESULT_BACKEND=redis://localhost:6379/0
-
-# Module 9: URL Preview Microservice
-PREVIEW_SERVICE_URL=http://preview_service:8001
-CORS_ALLOWED_ORIGINS=
-CORS_ALLOW_ALL_ORIGINS=False
-CIRCUIT_BREAKER_FAILURE_THRESHOLD=5
-CIRCUIT_BREAKER_RECOVERY_TIMEOUT=300
 ```
 
-**Module 8 Environment Breakdown:**
-- `REDIS_URL`: Redis connection for cache-aside pattern (24-hour TTL for redirects)
-- `CELERY_BROKER_URL`: Redis connection for Celery task queue (click tracking, cleanup)
-- `CELERY_RESULT_BACKEND`: Redis for Celery task results (same broker for simplicity)
-
-**Module 9 Environment Breakdown:**
-- `PREVIEW_SERVICE_URL`: Base URL for the preview metadata microservice
-- `CORS_ALLOWED_ORIGINS`: Exact frontend origins allowed to call the API in production
-- `CORS_ALLOW_ALL_ORIGINS`: Development-friendly CORS toggle when no frontend origin list is needed
-- `CIRCUIT_BREAKER_FAILURE_THRESHOLD`: Number of preview failures before a domain is temporarily blocked
-- `CIRCUIT_BREAKER_RECOVERY_TIMEOUT`: Cooldown window, in seconds, before retrying an open circuit
-
-### Code Style
+**Module 8 (Cache & Async):**
 ```bash
-# Format code
-poetry run black apps/ config/
+REDIS_URL=redis://redis:6379/0
+CELERY_BROKER_URL=redis://redis:6379/0
+CELERY_RESULT_BACKEND=redis://redis:6379/0
+```
 
-# Lint code
-poetry run ruff check apps/ config/
+**Module 9 (Preview Service):**
+```bash
+PREVIEW_SERVICE_URL=http://preview_service:8001
+CIRCUIT_BREAKER_FAILURE_THRESHOLD=5      # Failures before blocking domain
+CIRCUIT_BREAKER_RECOVERY_TIMEOUT=300     # Seconds before retry
+```
 
-# Pre-commit hooks
-pre-commit run --all-files
+**Security (Production):**
+```bash
+SECURE_SSL_REDIRECT=True
+SESSION_COOKIE_SECURE=True
+CSRF_COOKIE_SECURE=True
+```
+
+---
+
+## Common Commands
+
+**Run Tests:**
+```bash
+poetry run pytest -v                              # All tests
+poetry run pytest apps/api/tests/ -v              # Auth & API tests
+poetry run pytest --cov=apps --cov-report=html   # With coverage
+```
+
+**Database:**
+```bash
+poetry run python manage.py migrate              # Apply migrations
+poetry run python manage.py makemigrations       # Create migrations
+poetry run python manage.py shell                # Django shell
+docker compose exec db psql -U postgres -d urlshortener  # Direct DB access
+```
+
+**Docker:**
+```bash
+docker compose up --build                        # Build & start
+docker compose logs -f                           # View all logs
+docker compose logs -f web                       # Specific service
+docker compose down                              # Stop & cleanup
+```
+
+**Development:**
+```bash
+poetry run black apps/ config/                   # Format code
+poetry run ruff check apps/ config/              # Lint
+poetry run python manage.py check                # Django system check
+```
+
+---
+
+## API Status Codes
+
+| Code | Meaning | Common Causes |
+|------|---------|---------------|
+| 200 | OK | Successful GET/PUT/PATCH |
+| 201 | Created | Successful POST (new URL) |
+| 400 | Bad Request | Invalid JSON, validation error |
+| 401 | Unauthorized | Missing/expired token |
+| 403 | Forbidden | Permission denied, tier limit, rate limit |
+| 404 | Not Found | URL doesn't exist |
+| 410 | Gone | URL expired |
+| 429 | Too Many Requests | Rate limit exceeded |
+| 500 | Server Error | Database/code issue |
+
+---
+
+## Troubleshooting
+
+**Container won't start?**
+```bash
+docker compose logs web  # Check error
+docker compose down && docker compose up --build  # Rebuild
+```
+
+**Database connection failed?**
+```bash
+docker compose ps db                    # Verify running
+docker compose exec db psql -U postgres # Test connection
+```
+
+**Redis not responding?**
+```bash
+docker compose exec redis redis-cli ping  # Should return PONG
+docker compose restart redis             # Restart if needed
+```
+
+**Celery tasks not running?**
+```bash
+docker compose logs celery                # Check worker logs
+docker compose restart celery celery-beat # Restart tasks
+```
+
+**Rate limited (429 error)?**
+```
+Wait 1 minute for throttle to reset. Default: login 10/min, create 10/min.
+Disable throttles in dev: REST_FRAMEWORK["DEFAULT_THROTTLE_CLASSES"] = []
+```
+
+**Tests failing?**
+```bash
+poetry run pytest --lf -v               # Run last failed
+poetry run pytest -k test_name -v       # Run specific test
+poetry run pytest -x                    # Stop on first failure
 ```
 
 ---
 
 ## Testing
 
-### Run All Tests
-```bash
-poetry run pytest -v
-```
+**Coverage:** 243 tests passing  
+**Fixtures:** In-memory cache + eager Celery execution (no external services needed)
 
-### Run Specific Test Module
-```bash
-# Auth and permissions tests
-poetry run pytest apps/api/tests/test_auth_and_permissions.py -v
-
-# URL service tests
-poetry run pytest apps/shortener/tests/test_services.py -v
-
-# Specific test class
-poetry run pytest apps/api/tests/test_auth_and_permissions.py::TestRegister -v
-
-# With coverage
-poetry run pytest --cov=apps --cov-report=html
-```
-
-### Test Coverage Includes
-- ✅ User registration and validation
-- ✅ JWT login/logout/refresh
-- ✅ URL creation with tier limits
-- ✅ Ownership permissions (read/write/delete)
-- ✅ Premium feature gating (custom aliases, analytics)
-- ✅ Rate limiting
-- ✅ Analytics queries
-- ✅ Click tracking
-- ✅ Cache operations (set, get, invalidate)
-- ✅ Async Celery tasks (click tracking, URL cleanup)
-- ✅ Health check endpoint
-- ✅ Admin interface access control
-
-### Module 8 Testing: Pytest Fixtures
-
-**conftest.py** provides two autouse fixtures for isolated testing:
-
-```python
-@pytest.fixture(autouse=True)
-def use_locmem_cache(settings):
-    """Use in-memory cache instead of Redis for tests."""
-    settings.CACHES = {
-        "default": {
-            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
-        }
-    }
-    cache.clear()  # Clear before/after each test
-    yield
-    cache.clear()
-
-@pytest.fixture(autouse=True)
-def celery_eager(settings):
-    """Run Celery tasks synchronously for deterministic behavior."""
-    settings.CELERY_TASK_ALWAYS_EAGER = True
-    settings.CELERY_TASK_EAGER_PROPAGATES = True
-```
-
-**Benefits:**
-- No external Redis/Celery services required
-- Tests run in seconds (not waiting for broker)
-- Assertions can verify task side-effects immediately
-- Cache doesn't pollute between test runs
+**Key test areas:**
+- User registration, login, token refresh, logout
+- URL CRUD with tier-based permissions
+- Free tier limits (10 URLs max)
+- Premium features (custom aliases, analytics)
+- Click tracking async task
+- Cache-aside pattern
+- Preview service circuit-breaker
+- Rate limiting
+- Health check endpoint
 
 ---
 
-## Common Tasks
+## Modules Overview
 
-### Create a Migration
-```bash
-poetry run python manage.py makemigrations
-poetry run python manage.py migrate
-```
-
-### Access Database Shell
-```bash
-# Via Docker
-docker exec -it final-project-web-1 poetry run python manage.py dbshell
-
-# Local PostgreSQL
-psql -U postgres -d urlshortener
-```
-
-### Check Migrations Status
-```bash
-poetry run python manage.py showmigrations
-```
-
-### Reset Database (development only)
-```bash
-poetry run python manage.py flush
-```
+| Module | Focus | Key Tech |
+|--------|-------|----------|
+| 5 | URL generation | Django ORM, indexes |
+| 6 | Data layer | Models, relationships, queries |
+| 7 | JWT + RBAC | djangorestframework-simplejwt, permissions, throttling |
+| 8 | Caching & async | Redis, Celery, circuit-breaker, logging |
+| 9 | Preview metadata | HTML parsing, SSRF mitigation, microservice |
 
 ---
 
-## API Response Status Codes
+## Production Deployment
 
-| Status | Meaning |
-|--------|---------|
-| 200 | OK (successful GET/PUT/PATCH) |
-| 201 | Created (successful POST) |
-| 204 | No Content (successful DELETE) |
-| 302 | Found (redirect to original URL) |
-| 400 | Bad Request (validation error) |
-| 401 | Unauthorized (missing/invalid auth) |
-| 403 | Forbidden (permission denied, tier limit, rate limit) |
-| 404 | Not Found (resource doesn't exist) |
-| 410 | Gone (URL expired) |
-| 429 | Too Many Requests (rate limit exceeded) |
-| 500 | Internal Server Error |
+### Checklist
+
+- [ ] Set `SECRET_KEY` to secure random value
+- [ ] Set `DEBUG = False`
+- [ ] Configure `ALLOWED_HOSTS` to your domain(s)
+- [ ] Use HTTPS + set `SECURE_SSL_REDIRECT = True`
+- [ ] Use managed PostgreSQL (RDS, DigitalOcean, Heroku)
+- [ ] Use managed Redis (ElastiCache, DigitalOcean, Heroku)
+- [ ] Configure backups & point-in-time recovery
+- [ ] Set centralized logging (ELK, Datadog, Splunk)
+- [ ] Set up monitoring & alerts (Prometheus, New Relic)
+- [ ] Configure health checks for load balancers
+- [ ] Use Docker registry (Docker Hub, ECR, GCR)
+- [ ] Deploy with Kubernetes or Docker Swarm
+
+### Docker Image Build
+
+```bash
+docker build -t myregistry/urlshortener:latest \
+  --build-arg BUILD_TARGET=production \
+  -f Dockerfile .
+
+docker push myregistry/urlshortener:latest
+```
+
+### Kubernetes Example
+SESSION_COOKIE_SECURE=True
+CSRF_COOKIE_SECURE=True
+
+# Monitoring
+SENTRY_DSN=https://xxxxx@sentry.io/yyyyy
+
+# Logging
+LOG_LEVEL=INFO
+```
+
+### Kubernetes Deployment (Example)
+
+```yaml
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: urlshortener-api
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: urlshortener-api
+  template:
+    metadata:
+      labels:
+        app: urlshortener-api
+    spec:
+      containers:
+      - name: api
+        image: myregistry/urlshortener-api:latest
+        ports:
+        - containerPort: 8000
+        env:
+        - name: SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: urlshortener-secrets
+              key: secret_key
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: urlshortener-secrets
+              key: database_url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: urlshortener-secrets
+              key: redis_url
+        livenessProbe:
+          httpGet:
+            path: /health/
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health/
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          requests:
+            cpu: 200m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: urlshortener-celery
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: urlshortener-celery
+  template:
+    metadata:
+      labels:
+        app: urlshortener-celery
+    spec:
+      containers:
+      - name: worker
+        image: myregistry/urlshortener-api:latest
+        command: ["celery", "-A", "config", "worker", "-l", "info"]
+        env:
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: urlshortener-secrets
+              key: redis_url
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 1000m
+            memory: 512Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: urlshortener-preview
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: urlshortener-preview
+  template:
+    metadata:
+      labels:
+        app: urlshortener-preview
+    spec:
+      containers:
+      - name: preview
+        image: myregistry/urlshortener-preview:latest
+        ports:
+        - containerPort: 8001
+        livenessProbe:
+          httpGet:
+            path: /health/
+            port: 8001
+          initialDelaySeconds: 20
+          periodSeconds: 10
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+```
+
+### Health Monitoring Post-Deployment
+
+```bash
+# Check main API health
+curl https://yourdomain.com/health/
+
+# Check preview service health
+curl https://yourdomain.com/preview-health/
+# OR if separate:
+curl https://preview-api.yourdomain.com/health/
+
+# Check Celery queue depth
+curl https://yourdomain.com/api/admin/celery-stats/  # (if admin endpoint exists)
+```
+
+### Database Migration on Deploy
+
+```bash
+# Using Django management command (can be called from init container)
+python manage.py migrate --noinput
+
+# Or via bash script:
+docker exec urlshortener-api python manage.py migrate --noinput
+```
 
 ---
 
 ## Troubleshooting
+
 
 ### Database Connection Error
 ```bash

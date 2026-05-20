@@ -9,7 +9,8 @@ from apps.api.v1.links.views import URLRedirectView
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/v1/", include("apps.api.v1.urls")),
-    path("", include("apps.preview.urls")),
+    # Note: preview service is a separate container on port 8001
+    # Do NOT include it here; it's not part of the main API
     path(
         "health/",
         HealthView.as_view(permission_classes=[AllowAny]),
